@@ -95,6 +95,26 @@ def _ask(diff: str) -> bool:
     return input("Write these changes to settings.json? [y/N] ").strip().lower() == "y"
 
 
+def build_config(home: Path, projects: Path, port: int):
+    import uvicorn
+
+    from .server import create_app
+
+    return uvicorn.Config(create_app(home, projects, port), host="127.0.0.1", port=port, log_level="warning")
+
+
+def serve() -> None:
+    import uvicorn
+
+    from .server import load_key
+
+    home = Path(os.environ.get("MC_HOME", Path.home() / ".claude" / "mission-control"))
+    projects = Path(os.environ.get("MC_PROJECTS", Path.home() / ".claude" / "projects"))
+    port = int(os.environ.get("MC_PORT", "7788"))
+    print(f"Mission Control: http://127.0.0.1:{port}/?key={load_key(home)}")
+    uvicorn.Server(build_config(home, projects, port)).run()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="mission-control")
     ap.add_argument("command", nargs="?", default="serve", choices=["serve", "install-hook", "uninstall-hook"])
@@ -104,8 +124,7 @@ def main() -> int:
     elif cmd == "uninstall-hook":
         print("Removed." if uninstall_hook(SETTINGS) else "Nothing to remove.")
     else:
-        print("serve: not implemented yet")
-        return 1
+        serve()
     return 0
 
 
