@@ -86,3 +86,14 @@ def test_unquoted_secrets():
 
 def test_env_line_structure_preserved():
     assert mask_text("API_KEY=abc123\n\nDEBUG=true\n", ".env") == f"API_KEY={M}\n\nDEBUG={M}\n"
+
+
+def test_brackets_and_numbers_kept():
+    for code in [
+        "client.create(max_tokens=1024)",
+        "f(max_tokens=4096)",
+        "call(x, retries=3)",
+        "token = tokenize(x)",
+        "password_hash = hash_password(pw)",
+    ]:
+        assert mask_text(code) == code

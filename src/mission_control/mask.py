@@ -20,7 +20,7 @@ _ASSIGN_QUOTED = re.compile(
     r"""(?:\s*:\s*[\w.\[\], |]+?)?\s*[:=]\s*)(["'])[^"'\n]{4,}\2""",
     re.I,
 )
-_ASSIGN_BARE = re.compile(r"\b(\w*" + _KW + r"\w*)(=|:[ \t]?)([^\s\"',;]{4,})", re.I)
+_ASSIGN_BARE = re.compile(r"\b(\w*" + _KW + r"\w*)(=|:[ \t]?)([^\s\"',;)\]}>]{4,})", re.I)
 _URL_PASS = re.compile(r"(\w+://[^\s:/@]+:)[^\s@/]+(@)")
 _BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]{6,}", re.I)
 _CURL_U = re.compile(r"(\s(?:-u|--user)\s+[^\s:]+:)\S+")
@@ -44,9 +44,9 @@ def _mask_entropy(m: re.Match) -> str:
 
 def _mask_bare(m: re.Match) -> str:
     name, sep, val = m.groups()
-    if val.startswith("•") or "(" in val:
+    if val.startswith("•") or "(" in val or val.isdigit():
         return m.group(0)
-    if not name.isupper() and not (any(c.isdigit() for c in val) and not val.isdigit()):
+    if not name.isupper() and not any(c.isdigit() for c in val):
         return m.group(0)
     return name + sep + MASK
 
