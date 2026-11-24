@@ -1,5 +1,6 @@
 """Robot narrator: turns each edit into a 1-2 sentence chat bubble."""
 import asyncio
+import logging
 import os
 import re
 from collections.abc import Awaitable, Callable
@@ -15,6 +16,8 @@ PROMPT = (
 )
 HAIKU_URL = "https://api.anthropic.com/v1/messages"
 MAX_LINES = 80
+MAX_CHARS = 220
+log = logging.getLogger("mission_control.narrator")
 
 
 def _user_message(ev: dict) -> str:
@@ -24,7 +27,10 @@ def _user_message(ev: dict) -> str:
 
 
 def _trim(text: str) -> str:
-    return " ".join(re.split(r"(?<=[.!?])\s+", text.strip())[:2])
+    text = " ".join(re.split(r"(?<=[.!?])\s+", text.strip())[:2])
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS].rsplit(" ", 1)[0].rstrip() + "…"
+    return text
 
 
 class Narrator:
@@ -34,6 +40,7 @@ class Narrator:
         self.backend = backend or os.environ.get("MC_NARRATOR", "ollama")
         default = "claude-haiku-5-5" if self.backend == "haiku" else "qwen3-coder:30b"
         self.model = model or os.environ.get("MC_NARRATOR_MODEL") or default
+        self._own_client = client is None
         self.client = client or httpx.AsyncClient(timeout=20)
         self._pending: dict[str, dict] = {}
         self._workers: dict[str, asyncio.Task] = {}
@@ -48,16 +55,27 @@ class Narrator:
         while self._workers:
             await asyncio.gather(*self._workers.values())
 
+    async def aclose(self) -> None:
+        tasks = list(self._workers.values())
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if self._own_client:
+            await self.client.aclose()
+
     async def _work(self, sid: str) -> None:
         try:
             while sid in self._pending:
                 ev = self._pending.pop(sid)
                 text, source = await self._narrate(ev)
                 if text:
-                    await self.post({"type": "bubble", "session_id": sid,
-                                     "agent_id": ev.get("agent_id"),
-                                     "tool_use_id": ev.get("tool_use_id"),
-                                     "text": text, "source": source})
+                    try:
+                        await self.post({"type": "bubble", "session_id": sid,
+                                         "agent_id": ev.get("agent_id"),
+                                         "tool_use_id": ev.get("tool_use_id"),
+                                         "text": text, "source": source})
+                    except Exception:
+                        log.exception("bubble post failed")
         finally:
             del self._workers[sid]
 

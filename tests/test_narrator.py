@@ -114,3 +114,54 @@ async def test_haiku_backend(monkeypatch):
     assert seen[0].headers["anthropic-version"] == "2023-06-01"
     assert json.loads(seen[0].content)["model"] == "claude-haiku-5-5"
     assert out[0]["text"] == "Done." and out[0]["source"] == "model"
+
+
+async def test_post_failure_keeps_draining():
+    gate = asyncio.Event()
+    got = []
+
+    async def handler(req):
+        await gate.wait()
+        return ollama_reply("ok.")
+
+    async def post(b):
+        got.append(b["tool_use_id"])
+        if len(got) == 1:
+            raise RuntimeError("boom")
+
+    c = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n = Narrator(post, backend="ollama", client=c)
+    n.submit(ev(1))
+    await asyncio.sleep(0.05)
+    n.submit(ev(2))
+    gate.set()
+    await n.drain()
+    await c.aclose()
+    assert got == ["t1", "t2"]
+
+
+async def test_aclose_cancels_and_closes_own_client():
+    async def handler(req):
+        await asyncio.sleep(10)
+
+    c = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    n = Narrator(lambda b: None, backend="ollama", client=c)
+    n.submit(ev(1))
+    await asyncio.sleep(0.05)
+    await n.aclose()
+    assert not n._workers and not c.is_closed
+    await c.aclose()
+    own = Narrator(lambda b: None)
+    await own.aclose()
+    assert own.client.is_closed
+
+
+async def test_caps_long_text():
+    async def handler(req):
+        return ollama_reply("word " * 200)
+
+    n, out, c = make(handler, backend="ollama")
+    await run(n, [ev(1)])
+    await c.aclose()
+    t = out[0]["text"]
+    assert len(t) <= 221 and t.endswith("word…")
