@@ -58,3 +58,31 @@ def test_ordinary_code_untouched():
         "SUPER_LONG_CONSTANT_NAME_FOR_THE_TIMELINE_SCRUBBER",
     ]:
         assert mask_text(code) == code
+
+
+def test_more_ordinary_code():
+    for code in [
+        "handleOAuth2SessionTimelineScrubberChangeEvent",
+        "src/components/session/TimelineScrubber2/Index",
+        "sorted(xs, key=len)",
+        "f(token=token)",
+    ]:
+        assert mask_text(code) == code
+
+
+def test_unquoted_secrets():
+    cases = {
+        "export DB_PASSWORD=hunter2abc": "hunter2abc",
+        "curl -u admin:s3cretpass https://x": "s3cretpass",
+        "password: hunter2abc": "hunter2abc",
+        "Authorization: Bearer abcDEF123456": "abcDEF123456",
+        "DATABASE_URL=postgres://u:p4ss@h/db": "p4ss",
+        'password: str = "changeme"': "changeme",
+    }
+    for text, secret in cases.items():
+        out = mask_text(text)
+        assert M in out and secret not in out, text
+
+
+def test_env_line_structure_preserved():
+    assert mask_text("API_KEY=abc123\n\nDEBUG=true\n", ".env") == f"API_KEY={M}\n\nDEBUG={M}\n"

@@ -14,17 +14,17 @@ _KEY_PATTERNS = [
     re.compile(r"\bAIza[0-9A-Za-z_-]{35}"),
 ]
 
-_ASSIGN = re.compile(
-    r"""(\w*(?:password|passwd|pwd|secret|token|api[_-]?key|credential)\w*["']?\s*[:=]\s*["']?)"""
-    r"""([^\s"',;]{4,})""",
-    re.I,
-)
+_KW = r"(?:_key|apikey|secret|token|pass|auth(?!or)|credential)"
 _ASSIGN_QUOTED = re.compile(
-    r"""(\w*(?:password|passwd|pwd|secret|token|api[_-]?key|credential)\w*["']?\s*[:=]\s*)"""
-    r"""(["'])[^"'\n]{4,}\2""",
+    r"""(\w*(?:password|passwd|pwd|secret|token|api[_-]?key|credential)\w*["']?"""
+    r"""(?:\s*:\s*[\w.\[\], |]+?)?\s*[:=]\s*)(["'])[^"'\n]{4,}\2""",
     re.I,
 )
-_ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*\s*=\s*)(.*?)\s*$", re.M)
+_ASSIGN_BARE = re.compile(r"\b(\w*" + _KW + r"\w*)(=|:[ \t]?)([^\s\"',;]{4,})", re.I)
+_URL_PASS = re.compile(r"(\w+://[^\s:/@]+:)[^\s@/]+(@)")
+_BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]{6,}", re.I)
+_CURL_U = re.compile(r"(\s(?:-u|--user)\s+[^\s:]+:)\S+")
+_ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*\s*=\s*)(.*?)[ \t]*$", re.M)
 _CANDIDATE = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
 _HEX = re.compile(r"[0-9a-fA-F-]+")
 
@@ -36,9 +36,19 @@ def _entropy(s: str) -> float:
 
 def _mask_entropy(m: re.Match) -> str:
     tok = m.group(0)
-    if _HEX.fullmatch(tok) or not re.search(r"[0-9+/=]", tok) or _entropy(tok) < 4.0:
+    mixed = sum(c.isdigit() or c in "+=" for c in tok)
+    if _HEX.fullmatch(tok) or mixed < len(tok) * 0.1 or _entropy(tok) < 4.0:
         return tok
     return MASK
+
+
+def _mask_bare(m: re.Match) -> str:
+    name, sep, val = m.groups()
+    if val.startswith("•") or "(" in val:
+        return m.group(0)
+    if not name.isupper() and not (any(c.isdigit() for c in val) and not val.isdigit()):
+        return m.group(0)
+    return name + sep + MASK
 
 
 def mask_text(text: str, path: str | None = None) -> str:
@@ -46,7 +56,9 @@ def mask_text(text: str, path: str | None = None) -> str:
         text = p.sub(MASK, text)
     if path and (path.rsplit("/", 1)[-1].startswith(".env") or path.endswith(".env")):
         text = _ENV_LINE.sub(lambda m: m.group(1) + MASK if m.group(2) else m.group(0), text)
-        text = _ASSIGN.sub(lambda m: m.group(1) + MASK, text)
-    else:
-        text = _ASSIGN_QUOTED.sub(lambda m: m.group(1) + m.group(2) + MASK + m.group(2), text)
+    text = _URL_PASS.sub(lambda m: m.group(1) + MASK + m.group(2), text)
+    text = _BEARER.sub(lambda m: m.group(1) + MASK, text)
+    text = _CURL_U.sub(lambda m: m.group(1) + MASK, text)
+    text = _ASSIGN_QUOTED.sub(lambda m: m.group(1) + m.group(2) + MASK + m.group(2), text)
+    text = _ASSIGN_BARE.sub(_mask_bare, text)
     return _CANDIDATE.sub(_mask_entropy, text)
