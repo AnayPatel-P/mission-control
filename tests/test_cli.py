@@ -70,3 +70,24 @@ def test_install_creates_missing_settings(tmp_path):
     p = tmp_path / "settings.json"
     assert install(p) is True
     assert "Stop" in json.loads(p.read_text())["hooks"]
+
+
+def test_mode_preserved(tmp_path):
+    p = setup(tmp_path, EXISTING)
+    p.chmod(0o600)
+    install(p)
+    assert p.stat().st_mode & 0o777 == 0o600
+    cli.uninstall_hook(p)
+    assert p.stat().st_mode & 0o777 == 0o600
+
+
+def test_symlink_survives(tmp_path):
+    real = tmp_path / "real.json"
+    real.write_text(json.dumps(EXISTING))
+    link = tmp_path / "settings.json"
+    link.symlink_to(real)
+    install(link)
+    assert link.is_symlink()
+    assert "Stop" in json.loads(real.read_text())["hooks"]
+    cli.uninstall_hook(link)
+    assert link.is_symlink() and json.loads(real.read_text()) == EXISTING

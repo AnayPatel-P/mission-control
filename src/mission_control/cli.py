@@ -4,6 +4,7 @@ import difflib
 import json
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 from typing import Callable
@@ -35,9 +36,12 @@ def _dump(data: dict) -> str:
 
 
 def _atomic_write(path: Path, text: str) -> None:
+    path = path.resolve()  # keep a symlinked settings.json a symlink
     path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text)
+    os.chmod(tmp, mode)
     os.replace(tmp, path)
 
 
