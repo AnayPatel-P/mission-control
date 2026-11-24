@@ -48,3 +48,13 @@ def test_high_entropy():
 def test_note_and_bash():
     out = mask_text("export OPENAI_API_KEY=sk-proj-" + "e" * 30)
     assert out == f"export OPENAI_API_KEY={M}"
+
+
+def test_ordinary_code_untouched():
+    for code in [
+        "token = tokenize(x)",
+        "password_hash = hash_password(pw)",
+        "handleSessionTimelineScrubberChangeEventListener",
+        "SUPER_LONG_CONSTANT_NAME_FOR_THE_TIMELINE_SCRUBBER",
+    ]:
+        assert mask_text(code) == code

@@ -19,6 +19,11 @@ _ASSIGN = re.compile(
     r"""([^\s"',;]{4,})""",
     re.I,
 )
+_ASSIGN_QUOTED = re.compile(
+    r"""(\w*(?:password|passwd|pwd|secret|token|api[_-]?key|credential)\w*["']?\s*[:=]\s*)"""
+    r"""(["'])[^"'\n]{4,}\2""",
+    re.I,
+)
 _ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*\s*=\s*)(.*?)\s*$", re.M)
 _CANDIDATE = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
 _HEX = re.compile(r"[0-9a-fA-F-]+")
@@ -31,7 +36,7 @@ def _entropy(s: str) -> float:
 
 def _mask_entropy(m: re.Match) -> str:
     tok = m.group(0)
-    if _HEX.fullmatch(tok) or _entropy(tok) < 4.0:
+    if _HEX.fullmatch(tok) or not re.search(r"[0-9+/=]", tok) or _entropy(tok) < 4.0:
         return tok
     return MASK
 
@@ -41,5 +46,7 @@ def mask_text(text: str, path: str | None = None) -> str:
         text = p.sub(MASK, text)
     if path and (path.rsplit("/", 1)[-1].startswith(".env") or path.endswith(".env")):
         text = _ENV_LINE.sub(lambda m: m.group(1) + MASK if m.group(2) else m.group(0), text)
-    text = _ASSIGN.sub(lambda m: m.group(1) + MASK, text)
+        text = _ASSIGN.sub(lambda m: m.group(1) + MASK, text)
+    else:
+        text = _ASSIGN_QUOTED.sub(lambda m: m.group(1) + m.group(2) + MASK + m.group(2), text)
     return _CANDIDATE.sub(_mask_entropy, text)
