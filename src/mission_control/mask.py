@@ -44,7 +44,7 @@ def _mask_entropy(m: re.Match) -> str:
 
 def _mask_bare(m: re.Match) -> str:
     name, sep, val = m.groups()
-    if val.startswith("•") or "(" in val or val.isdigit():
+    if val.startswith("•") or "(" in val or (val.isdigit() and len(val) < 6):
         return m.group(0)
     if not name.isupper() and not any(c.isdigit() for c in val):
         return m.group(0)

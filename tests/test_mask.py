@@ -97,3 +97,15 @@ def test_brackets_and_numbers_kept():
         "password_hash = hash_password(pw)",
     ]:
         assert mask_text(code) == code
+
+
+def test_long_numeric_secrets():
+    for text, secret in {
+        "DB_PASSWORD=88442219": "88442219",
+        "SECRET_KEY=20251124": "20251124",
+        "password=123456789": "123456789",
+    }.items():
+        out = mask_text(text)
+        assert M in out and secret not in out, text
+    for code in ["MAX_TOKENS=4096", "max_tokens=1024", "retries=3"]:
+        assert mask_text(code) == code
