@@ -1,0 +1,30 @@
+[project]
+name = "mission-control"
+version = "0.1.0"
+description = "Local dashboard that watches Claude Code sessions and sends nudges"
+readme = "README.md"
+authors = [
+    { name = "Anay Patel", email = "284356825+AnayPatel-P@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+mission-control = "mission_control.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
