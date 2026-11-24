@@ -2,6 +2,7 @@ import argparse
 import copy
 import difflib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -33,6 +34,13 @@ def _dump(data: dict) -> str:
     return json.dumps(data, indent=2) + "\n"
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def install_hook(
     settings: Path,
     confirm: Callable[[str], bool],
@@ -51,8 +59,7 @@ def install_hook(
         return False
     if settings.exists():
         shutil.copy2(settings, settings.with_name(settings.name + ".mc-bak"))
-    settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text(_dump(new))
+    _atomic_write(settings, _dump(new))
     return True
 
 
@@ -75,7 +82,7 @@ def uninstall_hook(settings: Path) -> bool:
     if not hooks:
         del data["hooks"]
     shutil.copy2(settings, settings.with_name(settings.name + ".mc-bak"))
-    settings.write_text(_dump(data))
+    _atomic_write(settings, _dump(data))
     return True
 
 

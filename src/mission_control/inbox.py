@@ -67,8 +67,11 @@ def claim(home: Path, session_id: str, agent_id: str, now: float) -> list[Nudge]
             continue
         if not expired:
             n["delivered"] = now
-            _write(dest / f.name, n)
             got.append(n)
+            try:
+                _write(dest / f.name, n)
+            except OSError:
+                pass  # already delivered; the timestamp is cosmetic
     return sorted(got, key=lambda n: n["created"])  # type: ignore[return-value]
 
 

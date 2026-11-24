@@ -43,3 +43,14 @@ def test_permissions(tmp_path):
     d = tmp_path / "inbox" / "s1"
     assert stat.S_IMODE(os.stat(d).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(d / f"{n['id']}.json").st_mode) == 0o600
+
+
+def test_claim_returns_nudge_when_rewrite_fails(tmp_path, monkeypatch):
+    n = inbox.enqueue(tmp_path, "s1", "main", "hello")
+
+    def boom(*a, **k):
+        raise OSError("disk")
+
+    monkeypatch.setattr(inbox, "_write", boom)
+    got = inbox.claim(tmp_path, "s1", "main", n["created"] + 1)
+    assert [g["id"] for g in got] == [n["id"]]

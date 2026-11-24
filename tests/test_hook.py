@@ -51,7 +51,7 @@ def test_fail_open(tmp_path):
     d = tmp_path / "inbox" / "s1"
     d.chmod(0o500)
     try:
-        run("post", '{"session_id":"s1"}', tmp_path)
+        assert run("post", '{"session_id":"s1"}', tmp_path) == ""
     finally:
         d.chmod(0o700)
 
@@ -69,3 +69,16 @@ def test_speed(tmp_path):
         )
         times.append(time.perf_counter() - t)
     assert statistics.median(times) < 0.06
+
+
+def test_fail_open_when_inbox_import_breaks(tmp_path):
+    lone = tmp_path / "hook.py"
+    lone.write_text(HOOK.read_text())
+    r = subprocess.run(
+        [sys.executable, str(lone), "post"],
+        input='{"session_id":"s1"}',
+        text=True,
+        capture_output=True,
+        env={"MC_HOME": str(tmp_path), "PATH": "/usr/bin"},
+    )
+    assert r.returncode == 0 and r.stdout == ""

@@ -5,9 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import inbox  # noqa: E402
-
 PREFIX = "Message from Anay via Mission Control: "
 
 
@@ -17,6 +14,9 @@ def text_for(nudges) -> str:
 
 def main(kind, stdin, stdout, home=None) -> int:
     try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import inbox
+
         data = json.loads(stdin.read())
         home = Path(home or os.environ.get("MC_HOME") or Path.home() / ".claude" / "mission-control")
         nudges = inbox.claim(home, data["session_id"], data.get("agent_id") or "main", time.time())
