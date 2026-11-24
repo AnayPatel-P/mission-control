@@ -107,3 +107,76 @@ def test_history(tmp_path):
     assert [e["ts"] for e in h] == sorted(e["ts"] for e in h)
     assert any(e["agent_id"] == "a1" for e in h)
     assert h[0]["type"] == "edit" and h[0]["agent_id"] == "main"
+
+
+def test_bad_lines_and_raising_callback(tmp_path):
+    got, calls = [], []
+
+    def cb(ev):
+        calls.append(ev)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        got.append(ev)
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    f = proj / "s1.jsonl"
+    bad = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b","name":"Edit","input":"str"}]}}'
+    bad2 = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b"}]},"toolUseResult":{"structuredPatch":["x"]}}'
+    f.write_text(bad + "\n" + bad2 + "\n" + APPEND + "\n" + APPEND + "\n")
+    w = Watcher(tmp_path, cb)
+    w.scan()
+    assert len(calls) == 2 and len(got) == 1
+
+
+def test_feed_exception_skips_line(tmp_path, monkeypatch):
+    from mission_control import events
+    got = []
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "s1.jsonl").write_text(APPEND + "\n" + APPEND + "\n")
+    orig = events.LogParser.feed
+    n = []
+
+    def feed(self, line):
+        n.append(1)
+        if len(n) == 1:
+            raise ValueError
+        return orig(self, line)
+
+    monkeypatch.setattr(events.LogParser, "feed", feed)
+    Watcher(tmp_path, got.append).scan()
+    assert len(got) == 1
+
+
+def test_title_masked(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "s1.jsonl").write_text('{"type":"user","message":{"content":"use key AKIAIOSFODNN7EXAMPLE ok"}}\n')
+    w = Watcher(tmp_path, lambda e: None)
+    w.scan()
+    assert "AKIAIOSFODNN7EXAMPLE" not in w.sessions()[0]["title"]
+
+
+def _result(i, orig="orig\n"):
+    import json
+    use = {"type": "assistant", "timestamp": f"2026-11-24T10:00:{i:02d}Z", "message": {"content": [
+        {"type": "tool_use", "id": f"t{i}", "name": "Edit", "input": {"file_path": "/a", "old_string": "a", "new_string": "b"}}]}}
+    res = {"type": "user", "timestamp": f"2026-11-24T10:00:{i:02d}Z", "message": {"content": [{"type": "tool_result", "tool_use_id": f"t{i}"}]},
+           "toolUseResult": {"filePath": "/a", "originalFile": orig, "structuredPatch": [{"lines": ["-a", "+b"]}]}}
+    return json.dumps(use) + "\n" + json.dumps(res) + "\n"
+
+
+def test_caps(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "s1.jsonl").write_text("".join(_result(i) for i in range(10)))
+    got = []
+    w = Watcher(tmp_path, got.append, max_events=8, max_originals=3)
+    w.scan()
+    h = w.history("s1")
+    assert len(h) == 8 and len(got) == 20
+    results = [e for e in h if e["type"] == "edit_result"]
+    with_orig = [e for e in results if e["original_file"] is not None]
+    assert [e["tool_use_id"] for e in with_orig] == ["t7", "t8", "t9"]
+    assert all(e["original_file"] == "orig\n" for e in got if e["type"] == "edit_result")

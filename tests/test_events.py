@@ -72,3 +72,55 @@ def test_unknown_lines_ignored():
     p = LogParser("s1", "main")
     for line in ['{"type":"summary","summary":"x"}', '{"type":"attachment"}', "garbage{", "", "[1]", "null"]:
         assert p.feed(line) == []
+
+
+def _a(block):
+    import json
+    return json.dumps({"type": "assistant", "timestamp": "t", "message": {"content": [block]}})
+
+
+def test_note_across_lines_and_replaced():
+    p = LogParser("s1", "main")
+    tool = lambda i: {"type": "tool_use", "id": i, "name": "Bash", "input": {"command": "ls"}}
+    assert p.feed(_a({"type": "text", "text": "first"})) == []
+    assert p.feed(_a({"type": "thinking", "thinking": "ignore me"})) == []
+    assert p.feed(_a(tool("a")))[0]["note"] == "first"
+    assert p.feed(_a(tool("b")))[0]["note"] == "first"
+    p.feed(_a({"type": "text", "text": "second"}))
+    assert p.feed(_a(tool("c")))[0]["note"] == "second"
+
+
+def test_env_patch_and_pem_masked():
+    import json
+    pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIBabcdefghijkl\nmnopqrstuvwx\n-----END RSA PRIVATE KEY-----"
+    p = LogParser("s1", "main")
+    use = {"type": "tool_use", "id": "e1", "name": "Edit",
+           "input": {"file_path": "/p/.env", "old_string": pem, "new_string": "DB_HOST=secretvalue123"}}
+    ev = p.feed(_a(use))[0]
+    assert "MIIBabc" not in ev["old_text"] and "secretvalue123" not in ev["new_text"]
+    plines = ["-" + x for x in pem.split("\n")] + ["+DB_HOST=secretvalue123", " KEEP=1"]
+    res = {"type": "user", "timestamp": "t", "message": {"content": [{"type": "tool_result", "tool_use_id": "e1"}]},
+           "toolUseResult": {"filePath": "/p/.env", "originalFile": None, "structuredPatch": [
+               {"oldStart": 1, "oldLines": 5, "newStart": 1, "newLines": 2, "lines": plines}]}}
+    r = p.feed(json.dumps(res))[0]
+    blob = "\n".join(r["patch"][0]["lines"])
+    assert "MIIBabc" not in blob and "secretvalue123" not in blob
+    assert (r["added"], r["removed"]) == (1, 4)
+
+
+def test_malformed_shapes_skipped():
+    import json
+    p = LogParser("s1", "main")
+    assert p.feed(_a({"type": "tool_use", "id": "x", "name": "Edit", "input": "oops"})) == []
+    p.feed(_a({"type": "tool_use", "id": "y", "name": "Edit", "input": {"file_path": "/a", "old_string": "a", "new_string": "b"}}))
+    res = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "y"}]},
+           "toolUseResult": {"filePath": "/a", "structuredPatch": ["bad", {"lines": ["+z"]}]}}
+    assert p.feed(json.dumps(res))[0]["added"] == 1
+
+
+def test_pending_dropped_after_ttl():
+    p = LogParser("s1", "main", pending_ttl=3)
+    p.feed(_a({"type": "tool_use", "id": "y", "name": "Edit", "input": {"file_path": "/a", "old_string": "a", "new_string": "b"}}))
+    for _ in range(5):
+        p.feed("")
+    assert p._pending == {}
