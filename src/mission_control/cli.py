@@ -177,6 +177,12 @@ def build_config(home: Path, projects: Path, port: int, narrator_client=None):
     )
 
 
+def startup_line(port: int, key: str, home: Path, tty: bool) -> str:
+    if tty:
+        return f"Mission Control: http://127.0.0.1:{port}/?key={key}"
+    return f"Mission Control on http://127.0.0.1:{port}/ (access key in {home}/key, kept out of logs)"
+
+
 def serve() -> None:
     import uvicorn
 
@@ -185,7 +191,7 @@ def serve() -> None:
     home = Path(os.environ.get("MC_HOME", Path.home() / ".claude" / "mission-control"))
     projects = Path(os.environ.get("MC_PROJECTS", Path.home() / ".claude" / "projects"))
     port = int(os.environ.get("MC_PORT", "7788"))
-    print(f"Mission Control: http://127.0.0.1:{port}/?key={load_key(home)}")
+    print(startup_line(port, load_key(home), home, sys.stdout.isatty()), flush=True)
     uvicorn.Server(build_config(home, projects, port)).run()
 
 

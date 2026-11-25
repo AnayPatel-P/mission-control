@@ -143,3 +143,9 @@ def test_uninstall_agent(tmp_path):
     plist.write_bytes(b"x")
     assert cli.uninstall_agent(plist, calls.append) is True
     assert not plist.exists() and calls == [["bootout", f"gui/{os.getuid()}", str(plist)]]
+
+
+def test_startup_line_hides_key_outside_a_terminal():
+    assert cli.startup_line(7788, "k3y", Path("/h"), tty=True) == "Mission Control: http://127.0.0.1:7788/?key=k3y"
+    line = cli.startup_line(7788, "k3y", Path("/h"), tty=False)
+    assert "k3y" not in line and "http://127.0.0.1:7788/" in line and "/h/key" in line
