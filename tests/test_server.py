@@ -311,7 +311,7 @@ def test_auto_open_on_live_edit_only(tmp_path):
     log = proj / "s1.jsonl"
     shutil.copy(FIX / "main.jsonl", log)  # history with edits: must not trigger
     opened = []
-    app = create_app(tmp_path / "home", tmp_path / "projects", port, narrator_client=offline_client(), open_page=opened.append)
+    app = create_app(tmp_path / "home", tmp_path / "projects", port, narrator_client=offline_client(), open_page=opened.append, open_quiet_s=0)
     key = (tmp_path / "home" / "key").read_text().strip()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
     t = threading.Thread(target=server.run, daemon=True)
@@ -331,3 +331,11 @@ def test_auto_open_on_live_edit_only(tmp_path):
     server.should_exit = True
     t.join(5)
     assert opened == [f"http://127.0.0.1:{port}/?key={key}#session=s1"]
+
+
+def test_seen_needs_key_and_origin(tmp_path):
+    with served(tmp_path) as (c, key, _, ORIGIN):
+        assert c.post("/api/seen", headers=ORIGIN).status_code == 403
+        c.cookies.set("mc_key", key)
+        assert c.post("/api/seen").status_code == 403
+        assert c.post("/api/seen", headers=ORIGIN).json() == {"ok": True}

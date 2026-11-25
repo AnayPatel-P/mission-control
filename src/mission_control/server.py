@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import inbox, repos
-from .opener import AutoOpener
+from .opener import QUIET_S, AutoOpener
 from .narrator import Narrator
 from .watch import Watcher
 
@@ -62,6 +62,7 @@ def create_app(
     narrator_client: httpx.AsyncClient | None = None,
     code_root: Path | None = None,
     open_page: Callable[[str], None] | None = None,
+    open_quiet_s: float = QUIET_S,
 ) -> FastAPI:
     home, projects = Path(home), Path(projects)
     key = load_key(home)
@@ -87,7 +88,7 @@ def create_app(
     narrator = Narrator(post_bubble, backend=narrator_backend, client=narrator_client)
 
     opener = (
-        AutoOpener(lambda sid: f"http://127.0.0.1:{port}/?key={key}#session={sid}", lambda: len(clients), launch=open_page)
+        AutoOpener(lambda sid: f"http://127.0.0.1:{port}/?key={key}#session={sid}", lambda: len(clients), launch=open_page, quiet_s=open_quiet_s)
         if open_page
         else None
     )
@@ -191,6 +192,8 @@ def create_app(
 
         async def gen():
             clients.add(q)
+            if opener:
+                opener.page_event()
             try:
                 while True:
                     try:
@@ -201,8 +204,16 @@ def create_app(
                     yield f"data: {json.dumps(msg)}\n\n"
             finally:
                 clients.discard(q)
+                if opener:
+                    opener.page_event()
 
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+    @app.post("/api/seen")
+    async def seen():
+        if opener:
+            opener.seen()
+        return {"ok": True}
 
     @app.post("/api/nudge")
     async def nudge(body: NudgeIn):

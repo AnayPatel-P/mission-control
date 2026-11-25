@@ -121,28 +121,69 @@ def test_agent_plist():
     assert p["Label"] == "com.mission-control.server"
     assert p["ProgramArguments"] == ["/r/.venv/bin/mission-control", "serve"]
     assert p["RunAtLoad"] is True and p["KeepAlive"] is True
+    assert p["ThrottleInterval"] == 60
     assert p["StandardErrorPath"] == "/logs/server.log"
     assert "/usr/bin" in p["EnvironmentVariables"]["PATH"]
 
 
-def test_install_agent(tmp_path):
+def _repo(tmp_path):
+    exe = tmp_path / "r" / ".venv" / "bin" / "mission-control"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n")
+    return tmp_path / "r"
+
+
+def _fake_launchctl(results):
     calls = []
+
+    def run(args):
+        calls.append(args)
+        return results.pop(0) if results else (0, "")
+
+    return run, calls
+
+
+def test_install_agent(tmp_path):
+    run, calls = _fake_launchctl([])
     plist = tmp_path / "LaunchAgents" / "com.mission-control.server.plist"
-    assert cli.install_agent(plist, lambda text: False, calls.append, repo=Path("/r"), logs=tmp_path / "logs") is False
+    repo = _repo(tmp_path)
+    assert cli.install_agent(plist, lambda text: False, run, repo=repo, logs=tmp_path / "logs") is False
     assert not plist.exists() and calls == []
-    assert cli.install_agent(plist, lambda text: "mission-control" in text, calls.append, repo=Path("/r"), logs=tmp_path / "logs")
+    assert cli.install_agent(plist, lambda text: "mission-control" in text, run, repo=repo, logs=tmp_path / "logs")
     assert plist.exists() and (tmp_path / "logs").is_dir()
-    assert calls[0][:2] == ["bootout", f"gui/{os.getuid()}"]
+    assert calls[0] == ["bootout", f"gui/{os.getuid()}/com.mission-control.server"]
     assert calls[-1] == ["bootstrap", f"gui/{os.getuid()}", str(plist)]
 
 
-def test_uninstall_agent(tmp_path):
-    calls = []
+def test_install_agent_retries_then_reports_bootstrap_failure(tmp_path):
+    import pytest
+
     plist = tmp_path / "a.plist"
-    assert cli.uninstall_agent(plist, calls.append) is False
+    repo = _repo(tmp_path)
+    run, calls = _fake_launchctl([(0, ""), (5, "Bootstrap failed: 5: Input/output error"), (0, "")])
+    assert cli.install_agent(plist, lambda t: True, run, repo=repo, logs=tmp_path / "l", retry_wait=0)
+    assert [c[0] for c in calls] == ["bootout", "bootstrap", "bootstrap"]
+    run, _ = _fake_launchctl([(0, ""), (5, "boom"), (5, "Bootstrap failed: 5")])
+    with pytest.raises(RuntimeError, match="Bootstrap failed"):
+        cli.install_agent(plist, lambda t: True, run, repo=repo, logs=tmp_path / "l", retry_wait=0)
+
+
+def test_install_agent_needs_the_venv(tmp_path):
+    import pytest
+
+    run, calls = _fake_launchctl([])
+    with pytest.raises(RuntimeError, match="uv sync"):
+        cli.install_agent(tmp_path / "a.plist", lambda t: True, run, repo=tmp_path / "nope", logs=tmp_path / "l")
+    assert calls == [] and not (tmp_path / "a.plist").exists()
+
+
+def test_uninstall_agent(tmp_path):
+    run, calls = _fake_launchctl([(3, "Boot-out failed: 3: No such process")])
+    plist = tmp_path / "a.plist"
+    assert cli.uninstall_agent(plist, run) is False
     plist.write_bytes(b"x")
-    assert cli.uninstall_agent(plist, calls.append) is True
-    assert not plist.exists() and calls == [["bootout", f"gui/{os.getuid()}", str(plist)]]
+    assert cli.uninstall_agent(plist, run) is True
+    assert not plist.exists() and calls[-1] == ["bootout", f"gui/{os.getuid()}/com.mission-control.server"]
 
 
 def test_startup_line_hides_key_outside_a_terminal():

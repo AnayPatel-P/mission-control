@@ -878,7 +878,14 @@ bar.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
+// Tells the server a page is on screen, so it may auto-open a tab again later.
+function markSeen() {
+  if (document.visibilityState === "visible") fetch("/api/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
+}
+document.addEventListener("visibilitychange", markSeen);
+
 async function init() {
+  markSeen();
   openStream();
   try {
     S.cfg = await getJSON("/api/config");

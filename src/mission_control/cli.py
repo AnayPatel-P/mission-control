@@ -8,6 +8,7 @@ import shlex
 import shutil
 import stat
 import subprocess
+import time
 import sys
 from pathlib import Path
 from typing import Callable
@@ -106,39 +107,50 @@ def agent_plist(repo: Path, logs: Path) -> bytes:
         "WorkingDirectory": str(repo),
         "RunAtLoad": True,
         "KeepAlive": True,
+        "ThrottleInterval": 60,  # if it can't start (port taken), retry once a minute, not every 10 s
         "StandardOutPath": f"{logs}/server.log",
         "StandardErrorPath": f"{logs}/server.log",
         "EnvironmentVariables": {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
     })
 
 
-def _launchctl(args: list[str]) -> None:
-    subprocess.run(["launchctl", *args], capture_output=True, check=False)
+def _launchctl(args: list[str]) -> tuple[int, str]:
+    r = subprocess.run(["launchctl", *args], capture_output=True, text=True, check=False)
+    return r.returncode, (r.stderr or r.stdout).strip()
 
 
 def install_agent(
     plist: Path,
     confirm: Callable[[str], bool],
-    launchctl: Callable[[list[str]], None] = _launchctl,
+    launchctl: Callable[[list[str]], tuple[int, str]] = _launchctl,
     repo: Path = REPO,
     logs: Path = AGENT_LOGS,
+    retry_wait: float = 1.0,
 ) -> bool:
+    exe = Path(repo) / ".venv" / "bin" / "mission-control"
+    if not exe.exists():
+        raise RuntimeError(f"{exe} not found. Run `uv sync` in {repo} first.")
     data = agent_plist(repo, logs)
     if not confirm(f"{plist}:\n{data.decode()}"):
         return False
     logs.mkdir(parents=True, exist_ok=True)
     plist.parent.mkdir(parents=True, exist_ok=True)
     domain = f"gui/{os.getuid()}"
-    launchctl(["bootout", domain, str(plist)])  # reload if it was already running
+    launchctl(["bootout", f"{domain}/{AGENT_LABEL}"])  # reload if it was already running
     plist.write_bytes(data)
-    launchctl(["bootstrap", domain, str(plist)])
+    code, err = launchctl(["bootstrap", domain, str(plist)])
+    if code:  # often "Input/output error" while the old job is still exiting
+        time.sleep(retry_wait)
+        code, err = launchctl(["bootstrap", domain, str(plist)])
+    if code:
+        raise RuntimeError(f"launchctl bootstrap failed: {err}")
     return True
 
 
-def uninstall_agent(plist: Path, launchctl: Callable[[list[str]], None] = _launchctl) -> bool:
+def uninstall_agent(plist: Path, launchctl: Callable[[list[str]], tuple[int, str]] = _launchctl) -> bool:
+    code, _ = launchctl(["bootout", f"gui/{os.getuid()}/{AGENT_LABEL}"])
     if not plist.exists():
-        return False
-    launchctl(["bootout", f"gui/{os.getuid()}", str(plist)])
+        return code == 0
     plist.unlink()
     return True
 
@@ -204,7 +216,12 @@ def main() -> int:
     elif cmd == "uninstall-hook":
         print("Removed." if uninstall_hook(SETTINGS) else "Nothing to remove.")
     elif cmd == "install-agent":
-        print("Installed. It starts now and at every login." if install_agent(AGENT_PLIST, _ask_agent) else "No changes made.")
+        try:
+            ok = install_agent(AGENT_PLIST, _ask_agent)
+        except RuntimeError as e:
+            print(e)
+            return 1
+        print("Installed. It starts now and at every login." if ok else "No changes made.")
     elif cmd == "uninstall-agent":
         print("Removed." if uninstall_agent(AGENT_PLIST) else "Nothing to remove.")
     else:
