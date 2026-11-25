@@ -180,3 +180,46 @@ def test_caps(tmp_path):
     with_orig = [e for e in results if e["original_file"] is not None]
     assert [e["tool_use_id"] for e in with_orig] == ["t7", "t8", "t9"]
     assert all(e["original_file"] == "orig\n" for e in got if e["type"] == "edit_result")
+
+
+def test_files_past_window_are_dropped(tmp_path):
+    w, _, main = setup(tmp_path)
+    w.scan()
+    assert [s["id"] for s in w.sessions()] == ["s1"]
+    old = time.time() - 3 * 86400
+    os.utime(main, (old, old))
+    w.scan()
+    assert [s["agents"] for s in w.sessions()] == [["a1"]]  # subagent file still recent
+    os.utime(main.parent / "s1" / "subagents" / "agent-a1.jsonl", (old, old))
+    w.scan()
+    assert w.sessions() == [] and w.history("s1") == []
+
+
+def test_edit_text_capped(tmp_path):
+    import json
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    big = "x" * 50
+    use = {"type": "assistant", "timestamp": "t", "message": {"content": [
+        {"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "/a", "old_string": big, "new_string": "short"}}]}}
+    (proj / "s1.jsonl").write_text(json.dumps(use) + "\n")
+    got = []
+    w = Watcher(tmp_path, got.append, max_edit_text=10)
+    w.scan()
+    ev = w.history("s1")[0]
+    assert ev["old_text"] == "x" * 10 + "\n[... 40 more characters not shown ...]"
+    assert ev["new_text"] == "short" and got[0]["old_text"] == ev["old_text"]
+
+
+def test_bad_meta_line_keeps_batch(tmp_path):
+    import json
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    bad = json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": None}]}})
+    (proj / "s1.jsonl").write_text(bad + "\n" + APPEND + "\n")
+    got = []
+    w = Watcher(tmp_path, got.append)
+    w.scan()
+    assert [e["type"] for e in got] == ["bash"]

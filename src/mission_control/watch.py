@@ -9,6 +9,7 @@ from .events import LogParser
 from .mask import mask_text
 
 ACTIVE_SECS = 120
+MAX_EDIT_TEXT = 200_000
 
 
 class _File:
@@ -38,8 +39,10 @@ class Watcher:
         max_events: int = 2000,
         max_originals: int = 200,
         pending_ttl: int = 500,
+        max_edit_text: int = MAX_EDIT_TEXT,
     ):
         self.max_events, self.max_originals, self.pending_ttl = max_events, max_originals, pending_ttl
+        self.max_edit_text = max_edit_text
         self.root = Path(root)
         self.on_event = on_event
         self.history_days = history_days
@@ -62,10 +65,10 @@ class Watcher:
                 st = path.stat()
             except OSError:
                 continue
+            if st.st_mtime < cutoff:
+                continue  # past the history window: drop it if tracked (the session goes with its last file)
             f = self._files.get(path)
             if f is None:
-                if st.st_mtime < cutoff:
-                    continue
                 f = self._files[path] = _File(path, sid, aid, proj, self.max_events, self.pending_ttl)
                 self._meta.setdefault(sid, {"project": proj, "cwd": "", "branch": "", "title": ""})
             seen.add(path)
@@ -92,17 +95,25 @@ class Watcher:
         f.tail = parts.pop()
         for raw in parts:
             line = raw.decode("utf-8", errors="replace")
-            self._meta_from(sid, f, line)
             try:
+                self._meta_from(sid, f, line)
                 evs = f.parser.feed(line)
             except Exception:
                 continue
             for ev in evs:
+                if ev["type"] == "edit":
+                    for k in ("old_text", "new_text"):
+                        ev[k] = self._cap(ev[k])
                 self._store(f, ev)
                 try:
                     self.on_event(ev)
                 except Exception:
                     pass
+
+    def _cap(self, text: str) -> str:
+        if len(text) <= self.max_edit_text:
+            return text
+        return text[: self.max_edit_text] + f"\n[... {len(text) - self.max_edit_text} more characters not shown ...]"
 
     def _store(self, f: _File, ev: dict) -> None:
         ev = dict(ev)  # history keeps its own copy so trimming never touches what callers hold
