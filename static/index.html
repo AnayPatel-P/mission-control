@@ -14,12 +14,16 @@
 <div class="mc">
   <header class="top">
     <h1 class="sr">Mission Control</h1>
+    <div class="proj">
+      <button type="button" class="tab proj-btn" id="proj-btn" aria-expanded="false" aria-controls="proj-list" aria-pressed="false">Projects ▾</button>
+      <ul class="proj-list" id="proj-list" hidden></ul>
+    </div>
     <nav class="tabs" id="tabs" aria-label="Sessions"></nav>
     <p class="stat" id="stat"></p>
   </header>
 
   <main class="body">
-    <aside class="tree" aria-label="Files touched" tabindex="0">
+    <aside class="tree" id="tree-box" aria-label="Files touched" tabindex="0">
       <ul id="tree"></ul>
     </aside>
 

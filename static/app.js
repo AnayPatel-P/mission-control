@@ -42,6 +42,7 @@ const S = {
   loading: false,
   buffer: [],
   activity: new Map(), // "sid|agent" -> ms of last live event
+  browse: null, // {repo, path} while browsing a project, else null
 };
 
 // ---------- helpers ----------
@@ -414,7 +415,7 @@ function renderTabs() {
     for (const agent of s.agents) {
       const b = el("button", "tab");
       b.type = "button";
-      const on = S.tab && S.tab.sid === s.id && S.tab.agent === agent;
+      const on = !S.browse && S.tab && S.tab.sid === s.id && S.tab.agent === agent;
       b.setAttribute("aria-pressed", String(on));
       if (s.title) b.title = s.title;
       const active = tabActive(s, agent);
@@ -531,7 +532,7 @@ async function refreshSessions() {
   S.sessions = await getJSON("/api/sessions");
   renderTabs();
   renderStat();
-  if (!S.tab && S.sessions.length) selectTab(S.sessions[0].id, "main"); // first session appears after the page opened
+  if (!S.tab && !S.browse && S.sessions.length) selectTab(S.sessions[0].id, "main"); // first session appears after the page opened
 }
 
 let refreshTimer = 0;
@@ -542,6 +543,7 @@ function refreshSoon() {
 
 async function selectTab(sid, agent) {
   cancel();
+  if (S.browse) leaveBrowse();
   Object.assign(S, {
     tab: { sid, agent }, items: [], seen: new Set(), notes: new Map(), bubbles: new Map(),
     firstTs: 0, lastTs: 0, cursor: -1, target: -1, live: true, liveSeen: -1, replaying: false,
@@ -585,7 +587,7 @@ function openStream() {
   let dropped = false;
   es.onerror = () => { dropped = true; };
   es.onopen = () => {
-    if (dropped && S.tab) { // fill any gap left while disconnected
+    if (dropped && S.tab && !S.browse) { // fill any gap left while disconnected
       dropped = false;
       selectTab(S.tab.sid, S.tab.agent);
     }
@@ -600,7 +602,7 @@ function openStream() {
       if (!s || !s.agents.includes(ev.agent_id)) refreshSoon();
       else renderTabs();
     }
-    if (!S.tab || ev.session_id !== S.tab.sid) return;
+    if (S.browse || !S.tab || ev.session_id !== S.tab.sid) return;
     if (S.loading) S.buffer.push(ev);
     else onLive(ev);
   };
@@ -673,6 +675,161 @@ async function sendNudge(e) {
 function updateLeft() {
   $("nudge-left").textContent = `${MAX_NUDGE - $("nudge").value.length} left`;
 }
+
+// ---------- projects (read-only browsing) ----------
+
+const projBtn = $("proj-btn");
+const projList = $("proj-list");
+
+function closeProjects(focusBtn) {
+  projList.hidden = true;
+  projBtn.setAttribute("aria-expanded", "false");
+  if (focusBtn) projBtn.focus();
+}
+
+async function openProjects() {
+  projList.hidden = false;
+  projBtn.setAttribute("aria-expanded", "true");
+  projList.replaceChildren(el("li", "msg", "Loading projects…"));
+  let repos;
+  try {
+    repos = await getJSON("/api/repos");
+  } catch {
+    projList.replaceChildren(el("li", "msg", "Couldn't load projects. Try again."));
+    return;
+  }
+  if (!repos.length) {
+    projList.replaceChildren(el("li", "msg", "No git repos found in the code folder (set MC_CODE_ROOT)."));
+    return;
+  }
+  projList.replaceChildren(...repos.map((r) => {
+    const li = el("li");
+    const b = el("button", "proj-item", r.id);
+    b.type = "button";
+    if (S.browse?.repo.id === r.id) b.setAttribute("aria-current", "true");
+    b.addEventListener("click", () => { closeProjects(false); selectRepo(r); });
+    li.append(b);
+    return li;
+  }));
+  projList.querySelector("button")?.focus();
+}
+
+function touchedIn(repoPath) {
+  const s = S.sessions.find((x) => x.id === S.tab?.sid);
+  if (!s || (s.cwd || "").replace(/\/$/, "") !== repoPath) return new Set();
+  return new Set(S.items.filter((it) => it.type === "edit").map((it) => rel(it.file)));
+}
+
+function leaveBrowse() {
+  S.browse = null;
+  document.body.classList.remove("browsing");
+  projBtn.setAttribute("aria-pressed", "false");
+  $("tree-box").setAttribute("aria-label", "Files touched");
+}
+
+async function selectRepo(r) {
+  cancel();
+  const touched = touchedIn(r.path);
+  S.browse = { repo: r, path: null, touched };
+  document.body.classList.add("browsing");
+  projBtn.setAttribute("aria-pressed", "true");
+  renderTabs();
+  $("tree-box").setAttribute("aria-label", `Files in ${r.id}`);
+  $("note").textContent = `Browsing ${r.id} · read-only`;
+  $("file").textContent = "";
+  $("tree").replaceChildren();
+  message("Loading files…");
+  let files;
+  try {
+    ({ files } = await getJSON(`/api/repos/${encodeURIComponent(r.id)}/files`));
+  } catch {
+    if (S.browse?.repo.id === r.id) message("Couldn't load this project's files. Pick it again to retry.");
+    return;
+  }
+  if (S.browse?.repo.id !== r.id) return;
+  renderRepoTree(files, touched);
+  message(files.length ? "Pick a file on the left." : "This repo has no tracked files yet.");
+}
+
+function renderRepoTree(files, touched) {
+  const root = { dirs: new Map(), files: [] };
+  for (const f of files) {
+    const parts = f.split("/");
+    let node = root;
+    for (const d of parts.slice(0, -1)) {
+      if (!node.dirs.has(d)) node.dirs.set(d, { dirs: new Map(), files: [] });
+      node = node.dirs.get(d);
+    }
+    node.files.push(f);
+  }
+  const build = (node, depth) => {
+    const ul = el("ul");
+    for (const [name, child] of [...node.dirs].sort(([a], [b]) => a.localeCompare(b))) {
+      const li = el("li", "rd");
+      const det = el("details");
+      det.open = depth === 0 && node.dirs.size <= 8;
+      det.append(el("summary", null, name + "/"), build(child, depth + 1));
+      li.append(det);
+      ul.append(li);
+    }
+    for (const f of node.files.sort()) {
+      const li = el("li", "rf");
+      const b = el("button", "rf-btn", f.split("/").pop() + (touched.has(f) ? " ●" : ""));
+      b.type = "button";
+      b.dataset.path = f;
+      if (touched.has(f)) b.classList.add("touched");
+      b.addEventListener("click", () => openFile(f));
+      li.append(b);
+      ul.append(li);
+    }
+    return ul;
+  };
+  $("tree").replaceChildren(...build(root, 0).children);
+}
+
+async function openFile(path) {
+  const r = S.browse?.repo;
+  if (!r) return;
+  cancel();
+  S.browse.path = path;
+  for (const b of $("tree").querySelectorAll(".rf-btn")) {
+    if (b.dataset.path === path) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  }
+  $("file").textContent = path;
+  message("Loading file…");
+  let out;
+  try {
+    out = await getJSON(`/api/repos/${encodeURIComponent(r.id)}/file?path=${encodeURIComponent(path)}`);
+  } catch {
+    if (S.browse?.path === path) message("Couldn't open this file. It may have been deleted or moved.");
+    return;
+  }
+  if (S.browse?.path !== path) return;
+  if (out.note) return message(`Not shown: ${out.note}.`);
+  const lines = splitLines(out.text);
+  if (!lines.length) return message("This file is empty.");
+  const code = $("code");
+  code.style.setProperty("--nw", `${String(lines.length).length + 1.5}ch`);
+  const frag = document.createDocumentFragment();
+  const rows = lines.map((s, i) => {
+    const { row, src } = lineRow({ t: " ", n: i + 1, s }, false);
+    src.textContent = s;
+    frag.append(row);
+    return { src, s };
+  });
+  code.replaceChildren(frag);
+  code.scrollTop = 0;
+  highlightLater(rows, langOf(path), S.token);
+}
+
+projBtn.addEventListener("click", () => (projList.hidden ? openProjects() : closeProjects(false)));
+projList.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); closeProjects(true); }
+});
+document.addEventListener("click", (e) => {
+  if (!projList.hidden && !e.target.closest(".proj")) closeProjects(false);
+});
 
 // ---------- wire up ----------
 
