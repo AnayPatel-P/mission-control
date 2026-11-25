@@ -115,9 +115,20 @@ def test_long_inputs_are_fast():
     import time
 
     rng = random.Random(1)
-    for text in ["a" * 100_000, "".join(rng.choice("0123456789abcdef") for _ in range(100_000)), "token" * 20_000]:
+    cases = [
+        ("a" * 100_000, None),
+        ("".join(rng.choice("0123456789abcdef") for _ in range(100_000)), None),
+        ("token" * 20_000, None),
+        ("password:" + " " * 100_000 + "x", None),
+        ("password: str" + " " * 100_000, None),
+        ("a:" * 50_000, None),
+        ("a=" * 50_000, None),
+        ("1" * 100_000, None),
+        ("A=x" + "\t" * 100_000 + "y", ".env"),
+    ]
+    for text, path in cases:
         t = time.perf_counter()
-        mask_text(text)
+        mask_text(text, path)
         assert time.perf_counter() - t < 1, text[:20]
 
 

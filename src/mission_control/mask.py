@@ -26,7 +26,7 @@ _STRICT_KW = re.compile(r"secret|token|password|passwd|_key|api_key|credential",
 # whole word is taken possessively: no backtracking, so long word runs stay linear.
 _ASSIGN_QUOTED = re.compile(
     r"""(\b(?=\w*?(?:password|passwd|pwd|secret|token|api[_-]?key|credential))\w++(?:-key\w*+)?["']?"""
-    r"""(?:\s*:\s*[\w.\[\], |]+?)?\s*[:=]\s*)(["'])[^"'\n]{4,}\2""",
+    r"""(?:[ \t]*:[ \t]*[\w.\[\]|][\w.\[\], |]{0,80}?)?[ \t]*[:=][ \t]*)(["'])[^"'\n]{4,}\2""",
     re.I,
 )
 _ASSIGN_BARE = re.compile(
@@ -35,7 +35,7 @@ _ASSIGN_BARE = re.compile(
 _URL_PASS = re.compile(r"(\b\w+://[^\s:/@]+:)[^\s@/]+(@)")
 _BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]{6,}", re.I)
 _CURL_U = re.compile(r"(\s(?:-u|--user)\s+[^\s:]+:)\S+")
-_ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*\s*=\s*)(.*?)[ \t]*$", re.M)
+_ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*[ \t]*=[ \t]*)([^\n]*[^ \t\n])?[ \t]*$", re.M)
 _CANDIDATE = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
 _HEX = re.compile(r"[0-9a-fA-F-]+")
 
