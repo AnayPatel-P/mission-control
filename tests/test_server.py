@@ -57,7 +57,7 @@ def served(tmp_path):
         if server.started:
             break
         time.sleep(0.05)
-    with httpx.Client(base_url=f"http://127.0.0.1:{port}") as c:
+    with httpx.Client(base_url=f"http://127.0.0.1:{port}", follow_redirects=True) as c:
         yield c, key, log, {"Origin": f"http://127.0.0.1:{port}"}
     server.should_exit = True
     t.join(5)
@@ -67,8 +67,8 @@ def test_requires_key(tmp_path):
     with served(tmp_path) as (c, key, _, ORIGIN):
         assert c.get("/api/sessions").status_code == 403
         assert c.get("/api/sessions?key=wrong").status_code == 403
-        r = c.get(f"/api/sessions?key={key}")
-        assert r.status_code == 200
+        r = c.get(f"/api/sessions?key={key}", follow_redirects=False)
+        assert r.status_code == 303
         assert "mc_key" in c.cookies
         assert "httponly" in r.headers["set-cookie"].lower()
         assert "samesite=strict" in r.headers["set-cookie"].lower()
@@ -77,7 +77,7 @@ def test_requires_key(tmp_path):
 
 def test_key_persists(tmp_path):
     _, k1, _ = make(tmp_path)
-    create_app(tmp_path / "home", tmp_path / "projects", PORT)
+    create_app(tmp_path / "home", tmp_path / "projects", PORT, narrator_client=offline_client())
     assert (tmp_path / "home" / "key").read_text().strip() == k1
     assert (tmp_path / "home" / "key").stat().st_mode & 0o777 == 0o600
 
@@ -147,7 +147,7 @@ def test_bubbles_in_history(tmp_path):
 
 
 def test_binds_localhost(tmp_path):
-    cfg = cli.build_config(tmp_path / "home", tmp_path / "projects", 7799)
+    cfg = cli.build_config(tmp_path / "home", tmp_path / "projects", 7799, narrator_client=offline_client())
     assert cfg.host == "127.0.0.1" and cfg.port == 7799
 
 
@@ -156,8 +156,8 @@ def test_stream_delivers_event(tmp_path):
         base = str(c0.base_url).rstrip("/")
 
         async def go():
-            async with httpx.AsyncClient(timeout=3) as c:
-                async with c.stream("GET", f"{base}/api/stream?key={key}") as r:
+            async with httpx.AsyncClient(timeout=3, cookies={"mc_key": key}) as c:
+                async with c.stream("GET", f"{base}/api/stream") as r:
                     assert r.status_code == 200
                     with log.open("a") as f:
                         f.write(EDIT)
@@ -167,3 +167,44 @@ def test_stream_delivers_event(tmp_path):
 
         ev = asyncio.run(asyncio.wait_for(go(), 3))
         assert ev["type"] == "edit" and ev["tool_use_id"] == "tu9"
+
+
+def test_empty_key_file_regenerated(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "key").write_text("")
+    with served(tmp_path) as (c, key, _, _):
+        assert len(key) >= 32
+        assert c.get("/api/sessions").status_code == 403
+        assert c.get("/api/sessions?key=").status_code == 403
+        c.cookies.set("mc_key", "")
+        assert c.get("/api/sessions").status_code == 403
+
+
+def test_origin_variants_rejected(tmp_path):
+    with served(tmp_path) as (c, key, _, good):
+        port = good["Origin"].rsplit(":", 1)[1]
+        body = {"session_id": "s1", "text": "hi"}
+        for origin in [None, "null", f"http://127.0.0.1:{int(port) + 1}", f"http://LOCALHOST:{port}", "http://127.0.0.1"]:
+            h = {} if origin is None else {"Origin": origin}
+            assert c.post(f"/api/nudge?key={key}", json=body, headers=h).status_code == 403, origin
+
+
+def test_wrong_cookie_and_ungated_routes(tmp_path):
+    with served(tmp_path) as (c, key, _, _):
+        for path in ["/api/stream", "/static/index.html", "/", "/api/config"]:
+            assert httpx.get(f"{c.base_url}{path}").status_code == 403, path
+        assert httpx.get(f"{c.base_url}/api/sessions", cookies={"mc_key": "nope"}).status_code == 403
+
+
+def test_key_redirect_strips_key(tmp_path):
+    with served(tmp_path) as (c, key, _, _):
+        r = httpx.get(f"{c.base_url}/api/nudge/abc?key={key}&session_id=s1")
+        assert r.status_code == 303
+        assert r.headers["location"] == "/api/nudge/abc?session_id=s1"
+        assert "mc_key" in r.cookies
+
+
+def test_history_bad_id_is_422(tmp_path):
+    with served(tmp_path) as (c, key, _, _):
+        assert c.get(f"/api/sessions/a.b/history?key={key}").status_code == 422

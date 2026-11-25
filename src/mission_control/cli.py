@@ -95,12 +95,12 @@ def _ask(diff: str) -> bool:
     return input("Write these changes to settings.json? [y/N] ").strip().lower() == "y"
 
 
-def build_config(home: Path, projects: Path, port: int):
+def build_config(home: Path, projects: Path, port: int, narrator_client=None):
     import uvicorn
 
     from .server import create_app
 
-    return uvicorn.Config(create_app(home, projects, port), host="127.0.0.1", port=port, log_level="warning")
+    return uvicorn.Config(create_app(home, projects, port, narrator_client=narrator_client), host="127.0.0.1", port=port, log_level="warning")
 
 
 def serve() -> None:

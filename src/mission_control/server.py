@@ -7,10 +7,11 @@ import re
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -30,16 +31,19 @@ PING_SECS = 15
 def load_key(home: Path) -> str:
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = home / "key"
-    if not path.exists():
-        try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(fd, "w") as f:
-                f.write(secrets.token_urlsafe(32))
+    try:
+        key = path.read_text().strip()
+    except OSError:
+        key = ""
+    if len(key) < 32:  # missing, empty or truncated: replace atomically
+        key = secrets.token_urlsafe(32)
+        tmp = path.with_name(f"key.{os.getpid()}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(key)
+        os.replace(tmp, path)
     os.chmod(path, 0o600)
-    return path.read_text().strip()
+    return key
 
 
 class NudgeIn(BaseModel):
@@ -80,16 +84,16 @@ def create_app(
 
     def on_event(ev: dict) -> None:
         fan_out(ev)
-        if not state["live"]:
-            return  # history replay on startup is not narrated
         tid = ev.get("tool_use_id")
         if ev["type"] == "edit" and tid:
             edits[tid] = ev
             while len(edits) > PENDING_EDITS:
                 edits.popitem(last=False)
         elif ev["type"] == "edit_result" and tid:
-            merged = dict(ev)
             src = edits.pop(tid, None)
+            if not state["live"]:
+                return  # history replay on startup is not narrated
+            merged = dict(ev)
             if src:
                 merged["note"], merged["kind"] = src.get("note"), src.get("kind")
             narrator.submit(merged)
@@ -115,39 +119,43 @@ def create_app(
         supplied = request.query_params.get("key")
         from_query = supplied is not None
         supplied = supplied if from_query else request.cookies.get("mc_key", "")
-        if not secrets.compare_digest(supplied.encode(), key.encode()):
+        if not supplied or not secrets.compare_digest(supplied.encode(), key.encode()):
             return JSONResponse({"detail": "forbidden"}, status_code=403)
         if request.method == "POST" and request.headers.get("origin") not in origins:
             return JSONResponse({"detail": "bad origin"}, status_code=403)
-        resp = await call_next(request)
+        if from_query and request.method == "GET":
+            rest = [(k, v) for k, v in request.query_params.multi_items() if k != "key"]
+            resp = RedirectResponse(request.url.path + (f"?{urlencode(rest)}" if rest else ""), status_code=303)
+        else:
+            resp = await call_next(request)
         if from_query:
             resp.set_cookie("mc_key", key, httponly=True, samesite="strict")
         return resp
 
     @app.get("/")
-    def index():
+    async def index():
         return FileResponse(STATIC / "index.html")
 
     @app.get("/api/config")
-    def config():
+    async def config():
         return {"subagent_nudges": SUBAGENT_NUDGES}
 
     @app.get("/api/sessions")
-    def sessions():
+    async def sessions():
         return watcher.sessions()
 
     @app.get("/api/sessions/{session_id}/history")
-    def history(session_id: str):
+    async def history(session_id: str):
         if not re.match(ID_RE, session_id):
-            raise HTTPException(404)
+            raise HTTPException(422)
         return {"events": watcher.history(session_id), "bubbles": list(bubbles.get(session_id, []))}
 
     @app.get("/api/stream")
     async def stream():
         q: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_MAX)
-        clients.add(q)
 
         async def gen():
+            clients.add(q)
             try:
                 while True:
                     try:
@@ -162,7 +170,7 @@ def create_app(
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
     @app.post("/api/nudge")
-    def nudge(body: NudgeIn):
+    async def nudge(body: NudgeIn):
         active = any(s["id"] == body.session_id and s["active"] for s in watcher.sessions())
         if not active:
             return {"status": "idle"}
@@ -170,7 +178,7 @@ def create_app(
         return {"id": n["id"], "status": "queued"}
 
     @app.get("/api/nudge/{nudge_id}")
-    def nudge_status(nudge_id: str, session_id: str = ""):
+    async def nudge_status(nudge_id: str, session_id: str = ""):
         if not re.match(ID_RE, nudge_id) or not re.match(ID_RE, session_id):
             raise HTTPException(404)
         return {"status": inbox.status(home, nudge_id, session_id, time.time())}
