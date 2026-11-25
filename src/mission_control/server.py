@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import inbox
+from . import inbox, repos
 from .narrator import Narrator
 from .watch import Watcher
 
@@ -58,6 +58,7 @@ def create_app(
     port: int,
     narrator_backend: str | None = None,
     narrator_client: httpx.AsyncClient | None = None,
+    code_root: Path | None = None,
 ) -> FastAPI:
     home, projects = Path(home), Path(projects)
     key = load_key(home)
@@ -149,6 +150,29 @@ def create_app(
         if not re.match(ID_RE, session_id):
             raise HTTPException(422)
         return {"events": watcher.history(session_id), "bubbles": list(bubbles.get(session_id, []))}
+
+    def repo_path(repo_id: str) -> Path:
+        if code_root is None or not re.match(repos.REPO_RE, repo_id):
+            raise HTTPException(404)
+        for r in repos.list_repos(Path(code_root)):
+            if r["id"] == repo_id:
+                return Path(r["path"])
+        raise HTTPException(404)
+
+    @app.get("/api/repos")
+    async def repo_list():
+        return repos.list_repos(Path(code_root)) if code_root else []
+
+    @app.get("/api/repos/{repo_id}/files")
+    async def repo_files(repo_id: str):
+        return {"files": await asyncio.to_thread(repos.list_files, repo_path(repo_id))}
+
+    @app.get("/api/repos/{repo_id}/file")
+    async def repo_file(repo_id: str, path: str):
+        try:
+            return await asyncio.to_thread(repos.read_file, repo_path(repo_id), path)
+        except (FileNotFoundError, OSError):
+            raise HTTPException(404)
 
     @app.get("/api/stream")
     async def stream():

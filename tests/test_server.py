@@ -257,3 +257,48 @@ def test_shutdown_not_blocked_by_open_stream(tmp_path):
     server.should_exit = True
     t.join(4)
     assert not t.is_alive()
+
+
+def _code_root(tmp_path, name):
+    import subprocess
+
+    repo = tmp_path / "code" / name
+    repo.mkdir(parents=True)
+    (repo / ".gitignore").write_text(".env\n")
+    (repo / ".env").write_text("SECRET=x\n")
+    (repo / "a.py").write_text("x = 1\n")
+    for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"]):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    return tmp_path / "code"
+
+
+def _repo_client(tmp_path, name):
+    from fastapi.testclient import TestClient
+
+    app = create_app(tmp_path / "home", tmp_path / "projects", PORT, narrator_client=offline_client(), code_root=_code_root(tmp_path, name))
+    key = (tmp_path / "home" / "key").read_text().strip()
+    c = TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
+    c.cookies.set("mc_key", key)
+    return c
+
+
+def test_repo_routes(tmp_path):
+    (tmp_path / "projects").mkdir()
+    with _repo_client(tmp_path, "proj") as c:
+        c.cookies.clear()
+        assert c.get("/api/repos").status_code == 403
+        c.cookies.set("mc_key", (tmp_path / "home" / "key").read_text().strip())
+        assert [r["id"] for r in c.get("/api/repos").json()] == ["proj"]
+        assert c.get("/api/repos/proj/files").json() == {"files": [".gitignore", "a.py"]}
+        assert c.get("/api/repos/proj/file", params={"path": "a.py"}).json() == {"path": "a.py", "text": "x = 1\n"}
+        for url in ["/api/repos/../files", "/api/repos/..%2F/files", "/api/repos/nope/files", "/api/repos/.git/files"]:
+            assert c.get(url).status_code == 404, url
+        assert c.get("/api/repos/proj/file", params={"path": ".env"}).status_code == 404
+        assert c.get("/api/repos/proj/file", params={"path": "../../home/key"}).status_code == 404
+
+
+def test_repo_id_with_dot(tmp_path):
+    (tmp_path / "projects").mkdir()
+    with _repo_client(tmp_path, "site.github.io") as c:
+        assert [r["id"] for r in c.get("/api/repos").json()] == ["site.github.io"]
+        assert c.get("/api/repos/site.github.io/file", params={"path": "a.py"}).status_code == 200
