@@ -2,6 +2,8 @@
 
 A localhost page that replays what a Claude Code session is editing, as it happens. It tails the session logs in `~/.claude/projects`, types each edit into a code pane with syntax highlighting, keeps a file tree and a timeline you can scrub, and has a small robot in the corner that explains each edit in a sentence or two using a local Ollama model. There is also a nudge box: type a message and a hook delivers it to the session before its next step (or at the end of its turn). Nudges always arrive, but a session may treat one as untrusted and ignore it, subagents especially. Once a turn has ended, a nudge comes back as idle instead of queued (type in the chat then), so a late one can't land in some later, unrelated turn.
 
+The **Projects** button lists every git repo in your code folder and lets you read any file in it, read-only. It only shows files git tracks, so ignored files like `.env` never appear, and file contents go through the same secret masking.
+
 ![Mission Control replaying an edit, with the robot's note in the corner](docs/screenshots/mission-control.png)
 
 ## Install
@@ -30,6 +32,7 @@ It prints a URL with a local access key. The key is saved in `MC_HOME` and reuse
 | `MC_PORT` | `7788` | Port to listen on (always on 127.0.0.1). |
 | `MC_HOME` | `~/.claude/mission-control` | Where the key and the nudge inbox live. |
 | `MC_PROJECTS` | `~/.claude/projects` | Where Claude Code session logs are read from. |
+| `MC_CODE_ROOT` | `~/code` | Folder whose git repos the Projects button lists. |
 | `MC_NARRATOR` | `ollama` | `ollama` or `haiku`. |
 | `MC_NARRATOR_MODEL` | `qwen3-coder:30b` (Ollama), `claude-haiku-5-5` (haiku) | Model the robot uses. |
 | `MC_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama endpoint. |
