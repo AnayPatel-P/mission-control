@@ -522,7 +522,7 @@ function renderNudge() {
   $("nudge").disabled = $("nudge-send").disabled = blocked;
   const chip = $("nudge-chip");
   chip.dataset.s = "";
-  chip.textContent = s && blocked ? "Nudges reach main sessions only for now, so this subagent can't get one." : "";
+  chip.textContent = s && blocked ? "Nudges are off for subagents." : "";
 }
 
 // ---------- sessions ----------
