@@ -97,6 +97,14 @@ def _ask(diff: str) -> bool:
     return input("Write these changes to settings.json? [y/N] ").strip().lower() == "y"
 
 
+def _page_opener():
+    if sys.platform != "darwin" or os.environ.get("MC_AUTO_OPEN", "on").lower() == "off":
+        return None
+    from .opener import open_in_background
+
+    return open_in_background
+
+
 def build_config(home: Path, projects: Path, port: int, narrator_client=None):
     import uvicorn
 
@@ -106,6 +114,7 @@ def build_config(home: Path, projects: Path, port: int, narrator_client=None):
         create_app(
             home, projects, port, narrator_client=narrator_client,
             code_root=Path(os.environ.get("MC_CODE_ROOT", Path.home() / "code")),
+            open_page=_page_opener(),
         ),
         host="127.0.0.1", port=port, log_level="warning",
         timeout_graceful_shutdown=1,  # the live feed never ends on its own, so don't wait on it

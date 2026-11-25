@@ -7,6 +7,7 @@ import re
 import secrets
 import time
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlencode
 
 import httpx
@@ -16,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import inbox, repos
+from .opener import AutoOpener
 from .narrator import Narrator
 from .watch import Watcher
 
@@ -59,6 +61,7 @@ def create_app(
     narrator_backend: str | None = None,
     narrator_client: httpx.AsyncClient | None = None,
     code_root: Path | None = None,
+    open_page: Callable[[str], None] | None = None,
 ) -> FastAPI:
     home, projects = Path(home), Path(projects)
     key = load_key(home)
@@ -83,8 +86,16 @@ def create_app(
 
     narrator = Narrator(post_bubble, backend=narrator_backend, client=narrator_client)
 
+    opener = (
+        AutoOpener(lambda sid: f"http://127.0.0.1:{port}/?key={key}#session={sid}", lambda: len(clients), launch=open_page)
+        if open_page
+        else None
+    )
+
     def on_event(ev: dict) -> None:
         fan_out(ev)
+        if opener and state["live"] and ev["type"] in ("edit", "edit_result"):
+            opener.maybe_open(ev["session_id"])
         tid = ev.get("tool_use_id")
         if ev["type"] == "edit" and tid:
             edits[tid] = ev

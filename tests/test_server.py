@@ -302,3 +302,32 @@ def test_repo_id_with_dot(tmp_path):
     with _repo_client(tmp_path, "site.github.io") as c:
         assert [r["id"] for r in c.get("/api/repos").json()] == ["site.github.io"]
         assert c.get("/api/repos/site.github.io/file", params={"path": "a.py"}).status_code == 200
+
+
+def test_auto_open_on_live_edit_only(tmp_path):
+    port = free_port()
+    proj = tmp_path / "projects" / "proj"
+    proj.mkdir(parents=True)
+    log = proj / "s1.jsonl"
+    shutil.copy(FIX / "main.jsonl", log)  # history with edits: must not trigger
+    opened = []
+    app = create_app(tmp_path / "home", tmp_path / "projects", port, narrator_client=offline_client(), open_page=opened.append)
+    key = (tmp_path / "home" / "key").read_text().strip()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    time.sleep(0.6)
+    assert opened == []
+    with log.open("a") as f:
+        f.write(EDIT)
+    for _ in range(40):
+        if opened:
+            break
+        time.sleep(0.05)
+    server.should_exit = True
+    t.join(5)
+    assert opened == [f"http://127.0.0.1:{port}/?key={key}#session=s1"]
