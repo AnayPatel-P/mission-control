@@ -144,3 +144,32 @@ def test_write_create_uses_content_when_patch_empty():
     assert all(x.startswith("+") for x in h["lines"])
     assert "AKIAIOSFODNN7EXAMPLE" not in "\n".join(h["lines"])
     assert (r["added"], r["removed"]) == (3, 0)
+
+
+def test_note_reset_on_new_prompt():
+    import json
+
+    p = LogParser("s1", "main")
+    tool = lambda i: {"type": "tool_use", "id": i, "name": "Bash", "input": {"command": "ls"}}
+    user = lambda content: json.dumps({"type": "user", "message": {"content": content}})
+    p.feed(_a({"type": "text", "text": "old turn"}))
+    p.feed(user([{"type": "tool_result", "tool_use_id": "x", "content": "ok"}]))
+    assert p.feed(_a(tool("a")))[0]["note"] == "old turn"  # tool results keep the note
+    p.feed(user("next task please"))
+    assert p.feed(_a(tool("b")))[0]["note"] == ""
+    p.feed(_a({"type": "text", "text": "again"}))
+    p.feed(user([{"type": "text", "text": "and another"}]))
+    assert p.feed(_a(tool("c")))[0]["note"] == ""
+
+
+def test_long_error_is_cut_before_masking():
+    import json
+    import time
+
+    p = LogParser("s1", "main")
+    blob = "a" * 200_000
+    line = json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "e", "is_error": True, "content": blob}]}})
+    t = time.perf_counter()
+    ev = p.feed(line)[0]
+    assert time.perf_counter() - t < 1 and len(ev["message"]) == 300

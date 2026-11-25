@@ -94,6 +94,10 @@ class LogParser:
 
     def _user(self, obj: dict) -> list[dict]:
         content = (obj.get("message") or {}).get("content")
+        if isinstance(content, str) or (
+            isinstance(content, list) and any(isinstance(b, dict) and b.get("type") == "text" for b in content)
+        ):
+            self._note = ""  # a new prompt: the last turn's note no longer describes what comes next
         if not isinstance(content, list):
             return []
         ts = obj.get("timestamp") or ""
@@ -106,7 +110,7 @@ class LogParser:
             if b.get("is_error"):
                 self._pending.pop(tid, None)
                 ev = self._base("error", tid, ts)
-                ev["message"] = mask_text(_text(b.get("content")))[:300]
+                ev["message"] = mask_text(_text(b.get("content"))[:2000])[:300]
                 out.append(ev)
             elif tid in self._pending and isinstance(res, dict):
                 path = res.get("filePath") or self._pending[tid][0]
