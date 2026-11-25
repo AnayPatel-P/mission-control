@@ -560,13 +560,13 @@ async function selectTab(sid, agent) {
   try {
     hist = await getJSON(`/api/sessions/${encodeURIComponent(sid)}/history`);
   } catch {
-    if (S.tab.sid === sid && S.tab.agent === agent) {
+    if (!S.browse && S.tab.sid === sid && S.tab.agent === agent) {
       S.loading = false;
       message("Couldn't load this session's history. Pick the tab again to retry.");
     }
     return;
   }
-  if (S.tab.sid !== sid || S.tab.agent !== agent) return; // switched away meanwhile
+  if (S.browse || S.tab.sid !== sid || S.tab.agent !== agent) return; // switched away (or to a project) meanwhile
   for (const b of hist.bubbles || []) ingest(b, false);
   for (const ev of hist.events || []) ingest(ev, false);
   S.loading = false;
