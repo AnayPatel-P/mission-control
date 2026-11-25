@@ -109,3 +109,43 @@ def test_long_numeric_secrets():
         assert M in out and secret not in out, text
     for code in ["MAX_TOKENS=4096", "max_tokens=1024", "retries=3"]:
         assert mask_text(code) == code
+
+
+def test_long_inputs_are_fast():
+    import time
+
+    rng = random.Random(1)
+    for text in ["a" * 100_000, "".join(rng.choice("0123456789abcdef") for _ in range(100_000)), "token" * 20_000]:
+        t = time.perf_counter()
+        mask_text(text)
+        assert time.perf_counter() - t < 1, text[:20]
+
+
+def test_more_key_formats():
+    body = "Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z"
+    for s in [
+        "sb_secret_" + body,
+        "sk_live_" + body,
+        "rk_test_" + body,
+        "hf_" + body,
+        "ya29." + body + "-x_y",
+        "SG." + body[:22] + "." + body,
+        "xapp-1-A0B1C2D3-" + body,
+    ]:
+        assert mask_text(f"before {s} after") == f"before {M} after", s
+
+
+def test_spaced_assignment():
+    key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    out = mask_text(f"aws_secret_access_key = {key}")
+    assert out == f"aws_secret_access_key = {M}"
+    assert mask_text("GITHUB_TOKEN = abc123def456") == f"GITHUB_TOKEN = {M}"
+    for code in [
+        "token = tokenize(x)",
+        "password_hash = hash_password(pw)",
+        "token = self.tokens[0]",
+        "max_tokens = 128000",
+        "if token == other_token2:",
+        "user = admin2024",
+    ]:
+        assert mask_text(code) == code

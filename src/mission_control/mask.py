@@ -12,16 +12,27 @@ _KEY_PATTERNS = [
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
     re.compile(r"\bAIza[0-9A-Za-z_-]{35}"),
+    re.compile(r"\bsb_secret_[A-Za-z0-9_-]{20,}"),
+    re.compile(r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bhf_[A-Za-z0-9]{30,}"),
+    re.compile(r"\bya29\.[\w-]{20,}"),
+    re.compile(r"\bSG\.[\w-]{16,}\.[\w-]{16,}"),
+    re.compile(r"\bxapp-[\w-]{10,}"),
 ]
 
 _KW = r"(?:_key|apikey|secret|token|pass|auth(?!or)|credential)"
+_STRICT_KW = re.compile(r"secret|token|password|passwd|_key|api_key|credential", re.I)
+# Names start at a word boundary and the keyword is found by a lazy lookahead, then the
+# whole word is taken possessively: no backtracking, so long word runs stay linear.
 _ASSIGN_QUOTED = re.compile(
-    r"""(\w*(?:password|passwd|pwd|secret|token|api[_-]?key|credential)\w*["']?"""
+    r"""(\b(?=\w*?(?:password|passwd|pwd|secret|token|api[_-]?key|credential))\w++(?:-key\w*+)?["']?"""
     r"""(?:\s*:\s*[\w.\[\], |]+?)?\s*[:=]\s*)(["'])[^"'\n]{4,}\2""",
     re.I,
 )
-_ASSIGN_BARE = re.compile(r"\b(\w*" + _KW + r"\w*)(=|:[ \t]?)([^\s\"',;)\]}>]{4,})", re.I)
-_URL_PASS = re.compile(r"(\w+://[^\s:/@]+:)[^\s@/]+(@)")
+_ASSIGN_BARE = re.compile(
+    r"\b(?=\w*?" + _KW + r")(\w++)(=|:[ \t]?|[ \t]+=[ \t]*|=[ \t]+)([^\s\"',;)\]}>]{4,})", re.I
+)
+_URL_PASS = re.compile(r"(\b\w+://[^\s:/@]+:)[^\s@/]+(@)")
 _BEARER = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]{6,}", re.I)
 _CURL_U = re.compile(r"(\s(?:-u|--user)\s+[^\s:]+:)\S+")
 _ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*\s*=\s*)(.*?)[ \t]*$", re.M)
@@ -46,6 +57,9 @@ def _mask_bare(m: re.Match) -> str:
     name, sep, val = m.groups()
     if val.startswith("•") or "(" in val or (val.isdigit() and len(val) < 6):
         return m.group(0)
+    if sep[0] != ":" and sep != "=":  # `name = value`: only for clear secret names and plain values
+        if not _STRICT_KW.search(name) or val[0] == "=" or "[" in val or val.isdigit():
+            return m.group(0)
     if not name.isupper() and not any(c.isdigit() for c in val):
         return m.group(0)
     return name + sep + MASK
