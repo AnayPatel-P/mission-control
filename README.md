@@ -1,6 +1,6 @@
 # Mission Control
 
-A localhost page that replays what a Claude Code session is editing, as it happens. It tails the session logs in `~/.claude/projects`, types each edit into a code pane with syntax highlighting, keeps a file tree and a timeline you can scrub, and has a small robot in the corner that explains each edit in a sentence or two using a local Ollama model. There is also a nudge box: type a message and a hook delivers it to the session before its next step (or at the end of its turn). Nudges always arrive, but a session may treat one as untrusted and ignore it, subagents especially.
+A localhost page that replays what a Claude Code session is editing, as it happens. It tails the session logs in `~/.claude/projects`, types each edit into a code pane with syntax highlighting, keeps a file tree and a timeline you can scrub, and has a small robot in the corner that explains each edit in a sentence or two using a local Ollama model. There is also a nudge box: type a message and a hook delivers it to the session before its next step (or at the end of its turn). Nudges always arrive, but a session may treat one as untrusted and ignore it, subagents especially. Once a turn has ended, a nudge comes back as idle instead of queued (type in the chat then), so a late one can't land in some later, unrelated turn.
 
 ![Mission Control replaying an edit, with the robot's note in the corner](docs/screenshots/mission-control.png)
 
@@ -13,7 +13,9 @@ uv sync
 uv run mission-control install-hook
 ```
 
-`install-hook` adds a PostToolUse and a Stop hook to `~/.claude/settings.json`. It shows you the exact diff and asks before writing anything. `uv run mission-control uninstall-hook` removes it. The page works without the hook; you just can't send nudges.
+`install-hook` adds a PostToolUse and a Stop hook to `~/.claude/settings.json`. It shows you the exact diff and asks before writing anything. `uv run mission-control uninstall-hook` removes it. The page still shows edits without the hook, but nudges sit at queued and then expire, since nothing picks them up.
+
+The hook command is an absolute path into this repo's `.venv`. Run `uv run mission-control uninstall-hook` before you move or delete the repo or its `.venv`, or every Claude Code session will try to run a file that isn't there.
 
 ## Run
 
@@ -21,7 +23,7 @@ uv run mission-control install-hook
 uv run mission-control
 ```
 
-It prints a URL with a one-time key. Open that link once; after that a cookie keeps you in. The default port is 7788.
+It prints a URL with a local access key. The key is saved in `MC_HOME` and reused on every start, so treat that URL like a password. Open it once; after that a cookie keeps you in. The default port is 7788.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -50,7 +52,7 @@ Method and raw numbers are in the [design spec](docs/superpowers/specs/2026-11-2
 - The server binds to 127.0.0.1 only.
 - Every request needs the random key, passed once in the URL and then held in an HttpOnly, SameSite=Strict cookie.
 - POSTs are rejected unless their Origin matches, and nudges are capped at 2,000 characters.
-- Secrets are masked before anything leaves the server, and the robot's model only sees masked text and has no tools.
+- Secrets are masked before anything leaves the server, and the robot's model only sees masked text and has no tools. Masking is best-effort: it catches common key formats, secret-looking assignments and high-entropy strings, not everything.
 
 ## Vendored
 
