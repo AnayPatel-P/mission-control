@@ -531,6 +531,7 @@ async function refreshSessions() {
   S.sessions = await getJSON("/api/sessions");
   renderTabs();
   renderStat();
+  if (!S.tab && S.sessions.length) selectTab(S.sessions[0].id, "main"); // first session appears after the page opened
 }
 
 let refreshTimer = 0;
@@ -724,8 +725,7 @@ async function init() {
       : "Couldn't reach the server. Check that mission-control is running, then reload.");
     return;
   }
-  if (S.sessions.length) selectTab(S.sessions[0].id, "main");
-  else message("No Claude Code sessions from the last 2 days. Start one and it shows up here.");
+  if (!S.sessions.length) message("No Claude Code sessions from the last 2 days. Start one and it shows up here.");
   setInterval(() => refreshSessions().catch(() => {}), 10000);
   renderNudge();
 }
