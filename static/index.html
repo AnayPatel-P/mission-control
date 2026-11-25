@@ -1,2 +1,79 @@
 <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Mission Control</title>
+<link rel="stylesheet" href="/static/vendor/github-dark.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/highlight.min.js" defer></script>
+<script type="module" src="/static/app.js"></script>
+</head>
+<body>
+<div class="mc">
+  <header class="top">
+    <nav class="tabs" id="tabs" aria-label="Sessions"></nav>
+    <p class="stat" id="stat" aria-label="Session totals"></p>
+  </header>
+
+  <main class="body">
+    <aside class="tree" aria-label="Files touched">
+      <ul id="tree"></ul>
+    </aside>
+
+    <section class="ed" aria-label="Editor">
+      <div class="why">
+        <p class="note" id="note"></p>
+        <div class="mode" role="group" aria-label="View">
+          <button type="button" id="mode-typing" aria-pressed="true">Typing</button>
+          <button type="button" id="mode-diff" aria-pressed="false">Diff</button>
+        </div>
+      </div>
+      <div class="file" id="file"></div>
+      <div class="code hljs" id="code" tabindex="0" aria-label="Code">
+        <p class="msg">Loading sessions…</p>
+        <noscript><p class="msg">Mission Control needs JavaScript to replay edits.</p></noscript>
+      </div>
+
+      <div class="foot">
+        <form class="talk" id="talk">
+          <label class="sr" for="nudge">Nudge this session</label>
+          <div class="talk-row">
+            <input id="nudge" name="text" maxlength="2000" autocomplete="off" enterkeyhint="send"
+              placeholder="Tell this session something (arrives before its next step)">
+            <button type="submit" id="nudge-send">Nudge</button>
+          </div>
+          <p class="talk-meta"><span id="nudge-left">2000 left</span> <span class="chip" id="nudge-chip" role="status"></span></p>
+        </form>
+
+        <div class="corner">
+          <p class="bubble" id="bubble" role="status" hidden></p>
+          <svg class="robot" id="robot" data-state="idle" width="58" height="70" viewBox="0 0 58 70" role="img" aria-label="Robot narrator">
+            <line x1="29" y1="2" x2="29" y2="12" stroke="#8b949e" stroke-width="2"/>
+            <circle class="antenna" cx="29" cy="3" r="3" fill="#f78166"/>
+            <rect x="6" y="12" width="46" height="36" rx="10" fill="#e6edf3"/>
+            <rect x="11" y="17" width="36" height="24" rx="6" fill="#0d1117"/>
+            <g class="eyes"><rect x="17" y="24" width="7" height="9" rx="3" fill="#58a6ff"/><rect x="34" y="24" width="7" height="9" rx="3" fill="#58a6ff"/></g>
+            <g class="squint"><rect x="16" y="28" width="9" height="2" rx="1" fill="#58a6ff"/><rect x="33" y="28" width="9" height="2" rx="1" fill="#58a6ff"/></g>
+            <rect x="16" y="50" width="26" height="16" rx="6" fill="#c9d1d9"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="time">
+    <button type="button" class="ctl" id="first" aria-label="First edit">⏮</button>
+    <button type="button" class="ctl" id="play" aria-label="Replay from here">▶</button>
+    <div class="bar" id="bar" role="slider" tabindex="0" aria-label="Edit timeline"
+      aria-valuemin="1" aria-valuemax="1" aria-valuenow="1">
+      <div id="ticks"></div>
+      <div class="playhead" id="playhead" hidden></div>
+    </div>
+    <span class="pos" id="pos">edit 0 / 0</span>
+    <button type="button" class="live-chip" id="live" hidden></button>
+  </footer>
+</div>
+</body>
+</html>
