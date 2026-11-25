@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from mission_control import cli
@@ -111,3 +112,34 @@ def test_uninstall_matches_old_unquoted_entries(tmp_path):
     p = setup(tmp_path, data)
     assert cli.uninstall_hook(p) is True
     assert json.loads(p.read_text()) == EXISTING
+
+
+def test_agent_plist():
+    import plistlib
+
+    p = plistlib.loads(cli.agent_plist(Path("/r"), Path("/logs")))
+    assert p["Label"] == "com.mission-control.server"
+    assert p["ProgramArguments"] == ["/r/.venv/bin/mission-control", "serve"]
+    assert p["RunAtLoad"] is True and p["KeepAlive"] is True
+    assert p["StandardErrorPath"] == "/logs/server.log"
+    assert "/usr/bin" in p["EnvironmentVariables"]["PATH"]
+
+
+def test_install_agent(tmp_path):
+    calls = []
+    plist = tmp_path / "LaunchAgents" / "com.mission-control.server.plist"
+    assert cli.install_agent(plist, lambda text: False, calls.append, repo=Path("/r"), logs=tmp_path / "logs") is False
+    assert not plist.exists() and calls == []
+    assert cli.install_agent(plist, lambda text: "mission-control" in text, calls.append, repo=Path("/r"), logs=tmp_path / "logs")
+    assert plist.exists() and (tmp_path / "logs").is_dir()
+    assert calls[0][:2] == ["bootout", f"gui/{os.getuid()}"]
+    assert calls[-1] == ["bootstrap", f"gui/{os.getuid()}", str(plist)]
+
+
+def test_uninstall_agent(tmp_path):
+    calls = []
+    plist = tmp_path / "a.plist"
+    assert cli.uninstall_agent(plist, calls.append) is False
+    plist.write_bytes(b"x")
+    assert cli.uninstall_agent(plist, calls.append) is True
+    assert not plist.exists() and calls == [["bootout", f"gui/{os.getuid()}", str(plist)]]

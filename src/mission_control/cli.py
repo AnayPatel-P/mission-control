@@ -3,9 +3,11 @@ import copy
 import difflib
 import json
 import os
+import plistlib
 import shlex
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
@@ -92,6 +94,60 @@ def uninstall_hook(settings: Path) -> bool:
     return True
 
 
+AGENT_LABEL = "com.mission-control.server"
+AGENT_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{AGENT_LABEL}.plist"
+AGENT_LOGS = Path.home() / "Library" / "Logs" / "mission-control"
+
+
+def agent_plist(repo: Path, logs: Path) -> bytes:
+    return plistlib.dumps({
+        "Label": AGENT_LABEL,
+        "ProgramArguments": [f"{repo}/.venv/bin/mission-control", "serve"],
+        "WorkingDirectory": str(repo),
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "StandardOutPath": f"{logs}/server.log",
+        "StandardErrorPath": f"{logs}/server.log",
+        "EnvironmentVariables": {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+    })
+
+
+def _launchctl(args: list[str]) -> None:
+    subprocess.run(["launchctl", *args], capture_output=True, check=False)
+
+
+def install_agent(
+    plist: Path,
+    confirm: Callable[[str], bool],
+    launchctl: Callable[[list[str]], None] = _launchctl,
+    repo: Path = REPO,
+    logs: Path = AGENT_LOGS,
+) -> bool:
+    data = agent_plist(repo, logs)
+    if not confirm(f"{plist}:\n{data.decode()}"):
+        return False
+    logs.mkdir(parents=True, exist_ok=True)
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    domain = f"gui/{os.getuid()}"
+    launchctl(["bootout", domain, str(plist)])  # reload if it was already running
+    plist.write_bytes(data)
+    launchctl(["bootstrap", domain, str(plist)])
+    return True
+
+
+def uninstall_agent(plist: Path, launchctl: Callable[[list[str]], None] = _launchctl) -> bool:
+    if not plist.exists():
+        return False
+    launchctl(["bootout", f"gui/{os.getuid()}", str(plist)])
+    plist.unlink()
+    return True
+
+
+def _ask_agent(text: str) -> bool:
+    print(text)
+    return input("Install this LaunchAgent (starts Mission Control at login)? [y/N] ").strip().lower() == "y"
+
+
 def _ask(diff: str) -> bool:
     print(diff)
     return input("Write these changes to settings.json? [y/N] ").strip().lower() == "y"
@@ -135,12 +191,16 @@ def serve() -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="mission-control")
-    ap.add_argument("command", nargs="?", default="serve", choices=["serve", "install-hook", "uninstall-hook"])
+    ap.add_argument("command", nargs="?", default="serve", choices=["serve", "install-hook", "uninstall-hook", "install-agent", "uninstall-agent"])
     cmd = ap.parse_args().command
     if cmd == "install-hook":
         print("Installed." if install_hook(SETTINGS, _ask) else "No changes made.")
     elif cmd == "uninstall-hook":
         print("Removed." if uninstall_hook(SETTINGS) else "Nothing to remove.")
+    elif cmd == "install-agent":
+        print("Installed. It starts now and at every login." if install_agent(AGENT_PLIST, _ask_agent) else "No changes made.")
+    elif cmd == "uninstall-agent":
+        print("Removed." if uninstall_agent(AGENT_PLIST) else "Nothing to remove.")
     else:
         serve()
     return 0
