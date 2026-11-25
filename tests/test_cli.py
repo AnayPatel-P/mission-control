@@ -91,3 +91,23 @@ def test_symlink_survives(tmp_path):
     assert "Stop" in json.loads(real.read_text())["hooks"]
     cli.uninstall_hook(link)
     assert link.is_symlink() and json.loads(real.read_text()) == EXISTING
+
+
+def test_paths_with_spaces(tmp_path):
+    import shlex
+
+    p = setup(tmp_path, EXISTING)
+    py, repo = "/my venv/bin/python", Path("/Users/me/My Code/mission-control")
+    assert cli.install_hook(p, lambda d: True, python=py, repo=repo) is True
+    cmd = json.loads(p.read_text())["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert shlex.split(cmd) == [py, f"{repo}/src/mission_control/hook.py", "stop"]
+    assert cli.uninstall_hook(p) is True
+    assert json.loads(p.read_text()) == EXISTING
+
+
+def test_uninstall_matches_old_unquoted_entries(tmp_path):
+    old = {"type": "command", "command": "/venv/bin/python /repo/src/mission_control/hook.py post"}
+    data = {"hooks": {**EXISTING["hooks"], "Stop": [{"hooks": [old]}]}}
+    p = setup(tmp_path, data)
+    assert cli.uninstall_hook(p) is True
+    assert json.loads(p.read_text()) == EXISTING

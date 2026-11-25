@@ -3,6 +3,7 @@ import copy
 import difflib
 import json
 import os
+import shlex
 import shutil
 import stat
 import sys
@@ -18,7 +19,8 @@ def hook_entries(python: str, repo: Path) -> dict:
     script = f"{repo}/src/mission_control/hook.py"
 
     def entry(kind: str, **extra) -> dict:
-        return {**extra, "hooks": [{"type": "command", "command": f"{python} {script} {kind}"}]}
+        cmd = f"{shlex.quote(python)} {shlex.quote(script)} {kind}"
+        return {**extra, "hooks": [{"type": "command", "command": cmd}]}
 
     return {"PostToolUse": [entry("post", matcher="*")], "Stop": [entry("stop")]}
 
