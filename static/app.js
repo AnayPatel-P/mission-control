@@ -532,7 +532,14 @@ async function refreshSessions() {
   S.sessions = await getJSON("/api/sessions");
   renderTabs();
   renderStat();
-  if (!S.tab && !S.browse && S.sessions.length) selectTab(S.sessions[0].id, "main"); // first session appears after the page opened
+  if (!S.tab && !S.browse && S.sessions.length) selectTab(initialSession().id, "main");
+}
+
+// Auto-open links point at the session that started editing: /#session=<id>. Falls back to the newest.
+function initialSession() {
+  const m = location.hash.match(/^#session=([A-Za-z0-9_-]{1,128})$/);
+  if (m) history.replaceState(null, "", location.pathname);
+  return (m && S.sessions.find((s) => s.id === m[1])) || S.sessions[0];
 }
 
 let refreshTimer = 0;
