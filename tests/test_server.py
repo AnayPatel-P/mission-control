@@ -226,3 +226,34 @@ def test_key_redirect_strips_key(tmp_path):
 def test_history_bad_id_is_422(tmp_path):
     with served(tmp_path) as (c, key, _, _):
         assert c.get(f"/api/sessions/a.b/history?key={key}").status_code == 422
+
+
+def test_shutdown_not_blocked_by_open_stream(tmp_path):
+    port = free_port()
+    (tmp_path / "projects").mkdir(exist_ok=True)
+    server = uvicorn.Server(cli.build_config(tmp_path / "home", tmp_path / "projects", port, narrator_client=offline_client()))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    from mission_control.server import load_key
+
+    key = load_key(tmp_path / "home")
+    opened = threading.Event()
+
+    def hold_stream():
+        try:
+            with httpx.stream("GET", f"http://127.0.0.1:{port}/api/stream", cookies={"mc_key": key}, timeout=30) as r:
+                opened.set()
+                for _ in r.iter_lines():
+                    pass
+        except httpx.HTTPError:
+            pass
+
+    threading.Thread(target=hold_stream, daemon=True).start()
+    assert opened.wait(3)
+    server.should_exit = True
+    t.join(4)
+    assert not t.is_alive()

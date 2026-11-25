@@ -102,7 +102,10 @@ def build_config(home: Path, projects: Path, port: int, narrator_client=None):
 
     from .server import create_app
 
-    return uvicorn.Config(create_app(home, projects, port, narrator_client=narrator_client), host="127.0.0.1", port=port, log_level="warning")
+    return uvicorn.Config(
+        create_app(home, projects, port, narrator_client=narrator_client), host="127.0.0.1", port=port, log_level="warning",
+        timeout_graceful_shutdown=1,  # the live feed never ends on its own, so don't wait on it
+    )
 
 
 def serve() -> None:
