@@ -19,8 +19,19 @@ def main(kind, stdin, stdout, home=None) -> int:
 
         data = json.loads(stdin.read())
         home = Path(home or os.environ.get("MC_HOME") or Path.home() / ".claude" / "mission-control")
-        nudges = inbox.claim(home, data["session_id"], data.get("agent_id") or "main", time.time())
+        sid, agent = data["session_id"], data.get("agent_id") or "main"
+        marker = home / "stopped" / sid
+        if agent == "main" and kind != "stop" and os.path.basename(sid) == sid:
+            try:
+                os.unlink(marker)  # the session is working again
+            except OSError:
+                pass
+        nudges = inbox.claim(home, sid, agent, time.time())
         if not nudges:
+            if kind == "stop" and agent == "main" and os.path.basename(sid) == sid and sid not in (".", ".."):
+                inbox._mkdir(home)
+                inbox._mkdir(home / "stopped")
+                os.close(os.open(marker, os.O_WRONLY | os.O_CREAT, 0o600))  # turn over: the server reports idle
             return 0
         text = text_for(nudges)
         if kind == "stop":

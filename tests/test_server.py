@@ -105,6 +105,24 @@ def test_nudge_idle_vs_active(tmp_path):
         assert len(list((tmp_path / "home" / "inbox" / "s1").glob("*.json"))) == 1
 
 
+def test_nudge_idle_after_turn_ends(tmp_path):
+    from io import StringIO
+
+    from mission_control import hook
+
+    home = tmp_path / "home"
+    with served(tmp_path) as (c, key, log, ORIGIN):
+        hook.main("stop", StringIO('{"session_id":"s1"}'), StringIO(), home)
+        log.touch()
+        time.sleep(0.6)  # the log is fresh, so only the marker says the turn is over
+        r = c.post(f"/api/nudge?key={key}", json={"session_id": "s1", "text": "late"}, headers=ORIGIN).json()
+        assert r == {"status": "idle"}
+        assert not (home / "inbox" / "s1").exists()
+        hook.main("post", StringIO('{"session_id":"s1"}'), StringIO(), home)
+        r = c.post(f"/api/nudge?key={key}", json={"session_id": "s1", "text": "now"}, headers=ORIGIN).json()
+        assert r["status"] == "queued"
+
+
 def test_nudge_too_long_and_bad_ids(tmp_path):
     with served(tmp_path) as (c, key, _, ORIGIN):
         def post(**kw):

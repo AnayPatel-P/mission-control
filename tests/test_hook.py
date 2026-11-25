@@ -82,3 +82,24 @@ def test_fail_open_when_inbox_import_breaks(tmp_path):
         env={"MC_HOME": str(tmp_path), "PATH": "/usr/bin"},
     )
     assert r.returncode == 0 and r.stdout == ""
+
+
+def test_stop_marker(tmp_path):
+    marker = tmp_path / "stopped" / "s1"
+    run("stop", '{"session_id":"s1","agent_id":"a1"}', tmp_path)
+    assert not marker.exists()  # subagents don't end the turn
+    run("stop", '{"session_id":"s1"}', tmp_path)
+    assert marker.exists()
+    assert marker.stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "stopped").stat().st_mode & 0o777 == 0o700
+    run("post", '{"session_id":"s1","agent_id":"a1"}', tmp_path)
+    assert marker.exists()
+    run("post", '{"session_id":"s1"}', tmp_path)
+    assert not marker.exists()
+    run("post", '{"session_id":"s1"}', tmp_path)  # already gone: still fine
+
+
+def test_stop_with_mail_leaves_no_marker(tmp_path):
+    inbox.enqueue(tmp_path, "s1", "main", "wait")
+    run("stop", '{"session_id":"s1"}', tmp_path)
+    assert not (tmp_path / "stopped" / "s1").exists()

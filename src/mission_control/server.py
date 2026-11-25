@@ -172,7 +172,7 @@ def create_app(
     @app.post("/api/nudge")
     async def nudge(body: NudgeIn):
         active = any(s["id"] == body.session_id and s["active"] for s in watcher.sessions())
-        if not active:
+        if not active or (home / "stopped" / body.session_id).exists():  # the hook marks a finished turn
             return {"status": "idle"}
         n = inbox.enqueue(home, body.session_id, body.agent_id, body.text)
         return {"id": n["id"], "status": "queued"}
