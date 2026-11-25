@@ -27,11 +27,21 @@ uv run mission-control
 
 It prints a URL with a local access key. The key is saved in `MC_HOME` and reused on every start, so treat that URL like a password. Open it once; after that a cookie keeps you in. The default port is 7788.
 
+To keep it running from login, and have it open itself when Claude starts editing:
+
+```
+uv run mission-control install-agent     # LaunchAgent: starts now and at login, logs to ~/Library/Logs/mission-control/
+uv run mission-control uninstall-agent
+```
+
+When a session starts editing and no page is open, it opens the page behind your current window, straight to that session. It waits 60 s after any page connects or disconnects (so restarts and reloads don't count as closed), opens at most once every 30 minutes, and won't open another until you've actually looked at a Mission Control page. Set `MC_AUTO_OPEN=off` to turn it off. The agent doesn't see your shell's environment variables, so `MC_NARRATOR=haiku` and `ANTHROPIC_API_KEY` don't reach it.
+
 | Variable | Default | What it does |
 |---|---|---|
 | `MC_PORT` | `7788` | Port to listen on (always on 127.0.0.1). |
 | `MC_HOME` | `~/.claude/mission-control` | Where the key and the nudge inbox live. |
 | `MC_PROJECTS` | `~/.claude/projects` | Where Claude Code session logs are read from. |
+| `MC_AUTO_OPEN` | `on` | `off` stops it opening the page when a session starts editing. |
 | `MC_CODE_ROOT` | `~/code` | Folder whose git repos the Projects button lists. |
 | `MC_NARRATOR` | `ollama` | `ollama` or `haiku`. |
 | `MC_NARRATOR_MODEL` | `qwen3-coder:30b` (Ollama), `claude-haiku-5-5` (haiku) | Model the robot uses. |
@@ -65,4 +75,3 @@ highlight.js 11.12.0, copied into `static/vendor/`. There is no build step.
 
 - Timelapse export of a session
 - Phone access through `tailscale serve`
-- A LaunchAgent so it starts at login
