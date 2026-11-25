@@ -163,7 +163,7 @@ def test_install_agent_retries_then_reports_bootstrap_failure(tmp_path):
     run, calls = _fake_launchctl([(0, ""), (5, "Bootstrap failed: 5: Input/output error"), (0, "")])
     assert cli.install_agent(plist, lambda t: True, run, repo=repo, logs=tmp_path / "l", retry_wait=0)
     assert [c[0] for c in calls] == ["bootout", "bootstrap", "bootstrap"]
-    run, _ = _fake_launchctl([(0, ""), (5, "boom"), (5, "Bootstrap failed: 5")])
+    run, _ = _fake_launchctl([(0, "")] + [(5, "Bootstrap failed: 5")] * 5)
     with pytest.raises(RuntimeError, match="Bootstrap failed"):
         cli.install_agent(plist, lambda t: True, run, repo=repo, logs=tmp_path / "l", retry_wait=0)
 

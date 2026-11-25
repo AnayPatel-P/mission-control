@@ -138,10 +138,11 @@ def install_agent(
     domain = f"gui/{os.getuid()}"
     launchctl(["bootout", f"{domain}/{AGENT_LABEL}"])  # reload if it was already running
     plist.write_bytes(data)
-    code, err = launchctl(["bootstrap", domain, str(plist)])
-    if code:  # often "Input/output error" while the old job is still exiting
-        time.sleep(retry_wait)
+    for attempt in range(5):  # "Input/output error" while the old copy is still shutting down
         code, err = launchctl(["bootstrap", domain, str(plist)])
+        if not code:
+            break
+        time.sleep(retry_wait)
     if code:
         raise RuntimeError(f"launchctl bootstrap failed: {err}")
     return True
