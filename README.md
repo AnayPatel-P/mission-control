@@ -1,6 +1,6 @@
 # Mission Control
 
-A localhost page that replays what a Claude Code session is editing, as it happens. It tails the session logs in `~/.claude/projects`, types each edit into a code pane with syntax highlighting, keeps a file tree and a timeline you can scrub, and has a small robot in the corner that explains each edit in a sentence or two using a local Ollama model. There is also a nudge box: type a message and a hook delivers it to the session before its next step (or at the end of its turn).
+A localhost page that replays what a Claude Code session is editing, as it happens. It tails the session logs in `~/.claude/projects`, types each edit into a code pane with syntax highlighting, keeps a file tree and a timeline you can scrub, and has a small robot in the corner that explains each edit in a sentence or two using a local Ollama model. There is also a nudge box: type a message and a hook delivers it to the session before its next step (or at the end of its turn). Nudges always arrive, but a session may treat one as untrusted and ignore it, subagents especially.
 
 ![Mission Control replaying an edit, with the robot's note in the corner](docs/screenshots/mission-control.png)
 

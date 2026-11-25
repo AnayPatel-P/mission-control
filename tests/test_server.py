@@ -120,7 +120,7 @@ def test_nudge_too_long_and_bad_ids(tmp_path):
 
 def test_config_sessions_history_index(tmp_path):
     with served(tmp_path) as (c, key, _, ORIGIN):
-        assert c.get(f"/api/config?key={key}").json() == {"subagent_nudges": False}
+        assert c.get(f"/api/config?key={key}").json() == {"subagent_nudges": True}
         ss = c.get(f"/api/sessions?key={key}").json()
         assert [s["id"] for s in ss] == ["s1"]
         h = c.get(f"/api/sessions/s1/history?key={key}").json()

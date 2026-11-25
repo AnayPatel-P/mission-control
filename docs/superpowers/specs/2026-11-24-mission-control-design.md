@@ -166,4 +166,10 @@ Run 2026-11-24 on an M5 Max against temp `MC_HOME` / `MC_PROJECTS` (nothing touc
 - **Bubble latency:** real Ollama, `qwen3-coder:30b`, narrator default. Same stamp, observer on `#bubble` text. 12 edits, one per bubble. ms: 6477 (cold model load), 637, 635, 709, 632, 640, 612, 619, 604, 650, 689, 770. Median of all 12: 639 ms; median of the 11 warm: 637 ms. Each bubble was model output (not the note fallback), judged by the text.
 - **ui-verify:** final run 0 blocking, 6 advisory (CLS 0.139 at 390 px with a 20-plus file tree, and `state-untestable` x4 because the tool saw no request matching `/api/sessions`, so empty and error states were not exercised by it). Console errors, no sideways scroll at 390 and 1280 px, axe and reduced motion pass. 200% text checked by hand (root font-size 200%, 390 and 1280 px): no horizontal overflow, nothing clipped off screen. Fixes made: first session that appears after the page opened is now selected, line number contrast, keyboard-focusable file tree, page h1.
 
-Pending live test: hook delivery (mid-work and Stop), subagent tabs, and idle reporting in a real Claude Code session.
+Live hook test, 2026-11-25, real `~/.claude/settings.json` via `install-hook` (diff shown, backup written, file mode kept):
+
+- **Mid-work nudge:** a nudge queued for a running main session arrived as PostToolUse additionalContext on its very next tool call. No session restart was needed after install.
+- **Subagent nudge:** hook input inside a subagent carries the parent session_id plus its own agent_id. A nudge targeted at the subagent's agent_id landed in the subagent's context after its first tool call, and the parent did not see it. So subagent tabs keep the nudge box enabled.
+- **Turn-end nudge:** a fresh headless session (preset `--session-id`, nudge queued first, prompt needing no tools) hit the Stop hook, which blocked with the nudge as the reason. The session continued and acted on it.
+- **Caveat:** the test subagent saw its nudge but treated it as untrusted tool output and did not act on it. Delivery is reliable; whether a session follows a nudge depends on its own prompt-injection caution. Main sessions acted on theirs.
+- **Live watching:** the page ran against the real `~/.claude/projects` and showed the controlling session's own edits, notes and commands live.

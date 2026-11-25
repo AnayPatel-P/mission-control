@@ -19,7 +19,7 @@ from . import inbox
 from .narrator import Narrator
 from .watch import Watcher
 
-SUBAGENT_NUDGES: bool = False
+SUBAGENT_NUDGES: bool = True
 STATIC = Path(__file__).resolve().parents[2] / "static"
 ID_RE = r"^[A-Za-z0-9_-]{1,128}$"
 QUEUE_MAX = 1000
