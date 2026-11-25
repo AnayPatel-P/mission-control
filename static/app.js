@@ -311,7 +311,7 @@ function jump(i) {
 
 function replay() {
   if (!S.items.length) return;
-  if (S.playing) { // pause
+  if (S.playing && S.replaying) { // pause
     cancel();
     S.live = false;
     S.replaying = false;
@@ -513,6 +513,10 @@ function renderControls() {
 
 function renderNudge() {
   clearTimeout(pollTimer);
+  nudgeGen++; // late POST or poll results from the previous tab are dropped
+  nudgeBusy = false;
+  $("nudge").value = "";
+  updateLeft();
   const s = S.sessions.find((x) => x.id === S.tab?.sid);
   const blocked = !s || (S.tab.agent !== "main" && !S.cfg.subagent_nudges);
   $("nudge").disabled = $("nudge-send").disabled = blocked;
@@ -604,6 +608,10 @@ function openStream() {
 // ---------- nudge ----------
 
 let pollTimer = 0;
+let nudgeGen = 0;
+let nudgeBusy = false;
+const POLL_FAILS_MAX = 5;
+
 function setChip(state, text) {
   const chip = $("nudge-chip");
   chip.dataset.s = state;
@@ -614,9 +622,11 @@ async function sendNudge(e) {
   e.preventDefault();
   const input = $("nudge");
   const text = input.value.trim();
-  if (!text || !S.tab || input.disabled) return;
+  if (!text || !S.tab || input.disabled || nudgeBusy) return;
   clearTimeout(pollTimer);
+  const gen = ++nudgeGen;
   const { sid, agent } = S.tab;
+  nudgeBusy = true;
   $("nudge-send").disabled = true;
   try {
     const r = await getJSON("/api/nudge", {
@@ -624,27 +634,38 @@ async function sendNudge(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sid, agent_id: agent, text }),
     });
+    if (gen !== nudgeGen) return;
     if (r.status === "idle") {
       setChip("idle", "idle, type in the chat instead");
-    } else {
-      input.value = "";
-      updateLeft();
-      setChip("queued", "queued");
-      const poll = async () => {
-        try {
-          const st = await getJSON(`/api/nudge/${encodeURIComponent(r.id)}?session_id=${encodeURIComponent(sid)}`);
-          setChip(st.status, st.status);
-          if (st.status === "queued") pollTimer = setTimeout(poll, 2000);
-        } catch {
-          pollTimer = setTimeout(poll, 2000);
-        }
-      };
-      pollTimer = setTimeout(poll, 2000);
+      return;
     }
+    input.value = "";
+    updateLeft();
+    setChip("queued", "queued");
+    let fails = 0;
+    const poll = async () => {
+      try {
+        const st = await getJSON(`/api/nudge/${encodeURIComponent(r.id)}?session_id=${encodeURIComponent(sid)}`);
+        if (gen !== nudgeGen) return;
+        fails = 0;
+        setChip(st.status, st.status);
+        if (st.status === "queued") pollTimer = setTimeout(poll, 2000);
+      } catch {
+        if (gen !== nudgeGen) return;
+        if (++fails >= POLL_FAILS_MAX) setChip("error", "Lost track of this nudge. Is the server still running?");
+        else pollTimer = setTimeout(poll, 2000);
+      }
+    };
+    pollTimer = setTimeout(poll, 2000);
   } catch (err) {
-    setChip("error", err.status === 422 ? "Couldn't send: keep it under 2,000 characters." : "Couldn't send. Is the server still running?");
+    if (gen === nudgeGen) {
+      setChip("error", err.status === 422 ? "Couldn't send: keep it under 2,000 characters." : "Couldn't send. Is the server still running?");
+    }
   } finally {
-    $("nudge-send").disabled = $("nudge").disabled;
+    if (gen === nudgeGen) {
+      nudgeBusy = false;
+      $("nudge-send").disabled = $("nudge").disabled;
+    }
   }
 }
 

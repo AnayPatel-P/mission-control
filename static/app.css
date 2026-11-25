@@ -105,6 +105,7 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 
 .corner { flex: none; }
 .bubble { position: absolute; right: 22px; bottom: calc(100% + 6px); width: max-content; max-width: min(18rem, 70vw); margin: 0; background: var(--bubble-bg); color: var(--bubble-fg); border-radius: 12px 12px 2px 12px; padding: 8px 10px; font-size: 0.75rem; line-height: 1.35; overflow-wrap: anywhere; box-shadow: 0 4px 16px #01040999; z-index: 2; }
+.bubble.off { opacity: 0; pointer-events: none; }
 .bubble.pop { animation: pop .35s var(--ease-out); }
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.95); } }
 

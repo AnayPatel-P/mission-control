@@ -18,14 +18,15 @@ export function say(text) {
   if (!text) return;
   clearTimeout(bubbleTimer);
   bubble.textContent = text; // only the newest bubble shows
-  bubble.hidden = false;
+  bubble.classList.remove("off");
   bubble.classList.remove("pop");
   void bubble.offsetWidth; // restart the pop animation
   bubble.classList.add("pop");
   talking = true;
   if (robot.dataset.state !== "squint") setRobotState("talking");
   bubbleTimer = setTimeout(() => {
-    bubble.hidden = true;
+    bubble.classList.add("off"); // stays in the a11y tree so the next bubble is announced
+    bubble.textContent = "";
     talking = false;
     if (robot.dataset.state === "talking") setRobotState("idle");
   }, Math.max(4000, text.length * 60));

@@ -124,3 +124,23 @@ def test_pending_dropped_after_ttl():
     for _ in range(5):
         p.feed("")
     assert p._pending == {}
+
+
+def test_write_create_uses_content_when_patch_empty():
+    import json
+    content = "import os\nKEY = 'AKIAIOSFODNN7EXAMPLE'\nprint(KEY)\n"
+    p = LogParser("s1", "main")
+    use = {"type": "tool_use", "id": "w1", "name": "Write", "input": {"file_path": "/p/new.py", "content": content}}
+    p.feed(_a(use))
+    res = {"type": "user", "timestamp": "t", "message": {"content": [{"type": "tool_result", "tool_use_id": "w1"}]},
+           "toolUseResult": {"type": "create", "filePath": "/p/new.py", "content": content,
+                             "structuredPatch": [], "originalFile": None}}
+    r = p.feed(json.dumps(res))[0]
+    assert r["type"] == "edit_result" and r["original_file"] is None
+    assert len(r["patch"]) == 1
+    h = r["patch"][0]
+    assert (h["oldStart"], h["oldLines"], h["newStart"], h["newLines"]) == (0, 0, 1, 3)
+    assert h["lines"][0] == "+import os" and h["lines"][2] == "+print(KEY)"
+    assert all(x.startswith("+") for x in h["lines"])
+    assert "AKIAIOSFODNN7EXAMPLE" not in "\n".join(h["lines"])
+    assert (r["added"], r["removed"]) == (3, 0)

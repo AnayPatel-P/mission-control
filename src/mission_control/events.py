@@ -123,6 +123,14 @@ class LogParser:
             added += sum(1 for x in raw if x.startswith("+"))
             removed += sum(1 for x in raw if x.startswith("-"))
             patch.append({**{k: h.get(k) for k in ("oldStart", "oldLines", "newStart", "newLines")}, "lines": _mask_hunk(raw, path)})
+        content = res.get("content")
+        if not patch and isinstance(content, str) and content:
+            # A Write that creates a file logs an empty structuredPatch and the full text in `content`.
+            lines = mask_text(content, path).split("\n")
+            if lines[-1] == "":
+                lines.pop()
+            added = len(lines)
+            patch.append({"oldStart": 0, "oldLines": 0, "newStart": 1, "newLines": added, "lines": ["+" + x for x in lines]})
         orig = res.get("originalFile")
         ev = self._base("edit_result", tid, ts)
         ev.update(
