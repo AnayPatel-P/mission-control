@@ -156,3 +156,14 @@ Data source: tailing the log files was picked over capturing via hooks. It sees 
 - Robot animation details beyond the mockup (idle, talk, squint states).
 - Robot prompt wording, within the 1-to-2 sentence, plain-English, no-filename-parroting brief.
 - Tests: a parser test against recorded `.jsonl` fixtures, masking tests, hook tests (empty inbox, claim-once, crash fails open), and one end-to-end check that a nudge reaches a real session.
+
+## Verified
+
+Run 2026-11-24 on an M5 Max against temp `MC_HOME` / `MC_PROJECTS` (nothing touched `~/.claude`). Synthetic logs from `tests/fixtures`, plus appended Edit and result pairs.
+
+- **Hook overhead:** `.venv/bin/python src/mission_control/hook.py post`, stdin `{"session_id":"s1"}`, empty temp `MC_HOME`, 200 subprocess runs timed with `time.perf_counter`. p50 16.1 ms, p95 17.6 ms (190th of 200), min 15.3, max 19.1.
+- **Log append to on screen:** Playwright Chromium on the live page. Node stamped `Date.now()` right before appending an Edit and result pair; a MutationObserver on `#file` recorded `performance.timeOrigin + performance.now()` when that edit's file name appeared. 20 trials, 3.8 to 4.4 s random gaps (a fixed gap phase-locked with the 250 ms watcher poll and skewed an earlier run). Sorted ms: 8.6, 25.3, 46.9, 50.1, 55.1, 59, 68.2, 86.2, 100.6, 102.9, 107.5, 150.6, 164.3, 167.2, 180.5, 186.1, 192.1, 222.3, 231.3, 245.8. p50 105 ms, p95 231 ms (19th of 20), max 246 ms. Narrator pointed at a dead Ollama URL on that server so it could not interfere.
+- **Bubble latency:** real Ollama, `qwen3-coder:30b`, narrator default. Same stamp, observer on `#bubble` text. 12 edits, one per bubble. ms: 6477 (cold model load), 637, 635, 709, 632, 640, 612, 619, 604, 650, 689, 770. Median of all 12: 639 ms; median of the 11 warm: 637 ms. Each bubble was model output (not the note fallback), judged by the text.
+- **ui-verify:** final run 0 blocking, 6 advisory (CLS 0.139 at 390 px with a 20-plus file tree, and `state-untestable` x4 because the tool saw no request matching `/api/sessions`, so empty and error states were not exercised by it). Console errors, no sideways scroll at 390 and 1280 px, axe and reduced motion pass. 200% text checked by hand (root font-size 200%, 390 and 1280 px): no horizontal overflow, nothing clipped off screen. Fixes made: first session that appears after the page opened is now selected, line number contrast, keyboard-focusable file tree, page h1.
+
+Pending live test: hook delivery (mid-work and Stop), subagent tabs, and idle reporting in a real Claude Code session.
