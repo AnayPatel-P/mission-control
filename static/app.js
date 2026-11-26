@@ -105,7 +105,10 @@ function duration(msDiff) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
+let codeOnScreen = false; // the code pane holds an edit (not a Bash card or a message)
+
 function message(text) {
+  codeOnScreen = false;
   const code = $("code");
   code.replaceChildren(el("p", "msg", text));
 }
@@ -217,6 +220,7 @@ function typeRows(rows, msPerChar, lang, tok) {
 }
 
 function renderEdit(it, animate, tok) {
+  codeOnScreen = true;
   const diff = S.mode === "diff";
   const lang = langOf(it.file);
   const lines = buildLines(it).filter((l) => diff || l.t !== "-");
@@ -250,14 +254,22 @@ function renderEdit(it, animate, tok) {
 }
 
 function renderBash(it) {
+  codeOnScreen = false;
   const row = el("div", "ln ran");
   row.append(el("span", "no", ""), el("span", "src", it.command));
   $("code").replaceChildren(row);
 }
 
-async function show(i, animate, tok) {
+async function show(i, animate, tok, picked = false) {
   const it = S.items[i];
   if (!it) return;
+  if (it.type === "bash" && !picked && codeOnScreen) { // unless picked on the timeline: keep the last edit's code up, show the command above it
+    $("note").textContent = `$ ${it.command.split("\n")[0]}`;
+    renderTimeline();
+    const b = S.bubbles.get(it.tid);
+    if (b) say(b.text);
+    return;
+  }
   $("note").textContent = it.note ? `✎ "${it.note}"` : "";
   $("file").textContent = it.type === "edit" ? `${it.kind} · ${rel(it.file)}` : "Bash";
   renderTree();
@@ -306,7 +318,7 @@ function jump(i) {
   S.live = false;
   S.replaying = false;
   S.cursor = S.target = i;
-  show(i, false, S.token);
+  show(i, false, S.token, true);
   renderControls();
 }
 
@@ -581,7 +593,11 @@ async function selectTab(sid, agent) {
   S.cursor = S.target = S.liveSeen = n - 1;
   renderStat();
   renderControls();
-  if (n) show(n - 1, false, S.token);
+  if (n) {
+    const lastEdit = S.items.findLastIndex((x) => x.type === "edit");
+    if (lastEdit >= 0 && lastEdit < n - 1) show(lastEdit, false, S.token); // paint code first, the newer Bash goes above it
+    show(n - 1, false, S.token);
+  }
   else {
     renderTimeline();
     message("No edits in this session yet. They type in here as they happen.");
